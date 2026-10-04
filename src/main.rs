@@ -187,23 +187,69 @@ fn last_line() -> Option<String> {
     fs::read_to_string(HISTORY).ok()?.lines().rev().find(|l| ts_of(l).is_some()).map(String::from)
 }
 
-fn json_resp(code: u16, body: String) -> Response<std::io::Cursor<Vec<u8>>> {
-    Response::from_string(body)
-        .with_status_code(code)
-        .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+const CHAT_TXT: &str = "/home/drakestapleton/shared/agents/claude-chat.txt";
+const CHAT_JSONL: &str = "/home/drakestapleton/shared/agents/claude-chat.jsonl";
+const CHAT_DEFAULT_LINES: u64 = 500;
+const CHAT_MAX_LINES: u64 = 50000;
+const JSON_TYPE: &str = "application/json";
+const TEXT_TYPE: &str = "text/plain; charset=utf-8";
+const NDJSON_TYPE: &str = "application/x-ndjson";
+
+/// Number of lines asked for in `?lines=N`: default 500, clamped to 1..=50000.
+fn clamp_lines(q: Option<&str>) -> u64 {
+    let n = q
+        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("lines=")))
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(CHAT_DEFAULT_LINES);
+    n.clamp(1, CHAT_MAX_LINES)
 }
 
-fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, String) {
+/// Remote command for a chat feed: only a constant path and a validated integer reach the shell.
+fn chat_command(path: &'static str, q: Option<&str>) -> String {
+    if q.is_some_and(|q| q.split('&').any(|kv| kv == "all=1")) {
+        format!("cat {path}")
+    } else {
+        format!("tail -n {} {path}", clamp_lines(q))
+    }
+}
+
+/// Chat feed paths: (file on the Spark, content type).
+fn chat_route(path: &str) -> Option<(&'static str, &'static str)> {
+    match path {
+        "/v1/chat/claude" => Some((CHAT_TXT, TEXT_TYPE)),
+        "/v1/chat/claude.jsonl" => Some((CHAT_JSONL, NDJSON_TYPE)),
+        _ => None,
+    }
+}
+
+/// Proxy a chat feed live from the Spark; nothing is written or cached on the hub.
+fn chat_feed(path: &'static str, ctype: &'static str, q: Option<&str>) -> (u16, String, &'static str) {
+    match fetch(&chat_command(path, q)) {
+        Ok(o) => (200, String::from_utf8_lossy(&o.stdout).into_owned(), ctype),
+        Err(e) => {
+            eprintln!("readings-window: chat feed {path}: {e}");
+            (502, r#"{"error":"spark unreachable"}"#.into(), JSON_TYPE)
+        }
+    }
+}
+
+fn resp(code: u16, ctype: &str, body: String) -> Response<std::io::Cursor<Vec<u8>>> {
+    Response::from_string(body)
+        .with_status_code(code)
+        .with_header(Header::from_bytes("Content-Type", ctype).unwrap())
+}
+
+fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, String, &'static str) {
     let (path, query) = match url.split_once('?') {
         Some((p, q)) => (p, Some(q)),
         None => (url, None),
     };
-    let known = matches!(path, "/health" | "/v1/readings/current" | "/v1/readings/history" | "/v1/status" | "/v1/results" | "/v1/exposure");
+    let known = matches!(path, "/health" | "/v1/readings/current" | "/v1/readings/history" | "/v1/status" | "/v1/results" | "/v1/exposure" | "/v1/chat/claude" | "/v1/chat/claude.jsonl");
     if !known {
-        return (404, r#"{"error":"not found"}"#.into());
+        return (404, r#"{"error":"not found"}"#.into(), JSON_TYPE);
     }
     if *method != Method::Get {
-        return (405, r#"{"error":"method not allowed"}"#.into());
+        return (405, r#"{"error":"method not allowed"}"#.into(), JSON_TYPE);
     }
     if path == "/health" {
         let ex = exposure_state(fs::read_to_string(EXPOSURE).ok().as_deref(), now());
@@ -211,30 +257,33 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
             Some(t) => now().saturating_sub(t).to_string(),
             None => "null".into(),
         };
-        return (200, format!(r#"{{"status":"ok","last_reading_age_s":{age},"exposure":"{ex}"}}"#));
+        return (200, format!(r#"{{"status":"ok","last_reading_age_s":{age},"exposure":"{ex}"}}"#), JSON_TYPE);
     }
     if !auth_ok(auth, token) {
-        return (401, r#"{"error":"unauthorized"}"#.into());
+        return (401, r#"{"error":"unauthorized"}"#.into(), JSON_TYPE);
     }
     if path == "/v1/exposure" {
-        return (200, feed_body(EXPOSURE, validate_exposure, EXPOSURE_DEFAULT));
+        return (200, feed_body(EXPOSURE, validate_exposure, EXPOSURE_DEFAULT), JSON_TYPE);
     }
     if path == "/v1/status" {
-        return (200, feed_body(STATUS, validate_status, STATUS_DEFAULT));
+        return (200, feed_body(STATUS, validate_status, STATUS_DEFAULT), JSON_TYPE);
     }
     if path == "/v1/results" {
-        return (200, feed_body(RESULTS, validate_results, RESULTS_DEFAULT));
+        return (200, feed_body(RESULTS, validate_results, RESULTS_DEFAULT), JSON_TYPE);
+    }
+    if let Some((file, ctype)) = chat_route(path) {
+        return chat_feed(file, ctype, query);
     }
     if path == "/v1/readings/current" {
         return match last_line() {
-            Some(l) => (200, l),
-            None => (503, r#"{"error":"no readings yet"}"#.into()),
+            Some(l) => (200, l, JSON_TYPE),
+            None => (503, r#"{"error":"no readings yet"}"#.into(), JSON_TYPE),
         };
     }
     let cutoff = now().saturating_sub(clamp_hours(query) * 3600);
     let all = fs::read_to_string(HISTORY).unwrap_or_default();
     let rows = filter_since(all.lines(), cutoff);
-    (200, format!("[{}]", rows.join(",")))
+    (200, format!("[{}]", rows.join(",")), JSON_TYPE)
 }
 
 fn serve() -> Result<(), String> {
@@ -249,8 +298,8 @@ fn serve() -> Result<(), String> {
     let server = Server::https("0.0.0.0:9443", ssl).map_err(|e| format!("bind: {e}"))?;
     for req in server.incoming_requests() {
         let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.to_string());
-        let (code, body) = handle(req.method(), req.url(), auth.as_deref(), &token);
-        let _ = req.respond(json_resp(code, body));
+        let (code, body, ctype) = handle(req.method(), req.url(), auth.as_deref(), &token);
+        let _ = req.respond(resp(code, ctype, body));
     }
     Ok(())
 }
@@ -335,6 +384,39 @@ mod tests {
         assert!(validate_results(r#"{"updated":1}"#).is_err());
         assert!(validate_results(r#"{"updated":1,"results":[{"name":"a"}]}"#).is_err());
         assert!(validate_results("[]").is_err());
+    }
+    #[test]
+    fn lines_clamp() {
+        assert_eq!(clamp_lines(None), 500);
+        assert_eq!(clamp_lines(Some("lines=0")), 1);
+        assert_eq!(clamp_lines(Some("lines=1")), 1);
+        assert_eq!(clamp_lines(Some("lines=500")), 500);
+        assert_eq!(clamp_lines(Some("lines=60000")), 50000);
+        assert_eq!(clamp_lines(Some("lines=abc")), 500);
+        assert_eq!(clamp_lines(Some("lines=1;rm -rf /")), 500);
+        assert_eq!(clamp_lines(Some("lines=-5")), 500);
+    }
+    #[test]
+    fn chat_commands() {
+        assert_eq!(chat_command(CHAT_TXT, None), "tail -n 500 /home/drakestapleton/shared/agents/claude-chat.txt");
+        assert_eq!(chat_command(CHAT_TXT, Some("lines=60000")), "tail -n 50000 /home/drakestapleton/shared/agents/claude-chat.txt");
+        assert_eq!(chat_command(CHAT_TXT, Some("all=1")), "cat /home/drakestapleton/shared/agents/claude-chat.txt");
+        assert_eq!(chat_command(CHAT_JSONL, Some("lines=7&all=1")), "cat /home/drakestapleton/shared/agents/claude-chat.jsonl");
+        assert_eq!(chat_command(CHAT_JSONL, Some("lines=7")), "tail -n 7 /home/drakestapleton/shared/agents/claude-chat.jsonl");
+        assert_eq!(chat_command(CHAT_JSONL, Some("all=1;id")), "tail -n 500 /home/drakestapleton/shared/agents/claude-chat.jsonl");
+    }
+    #[test]
+    fn chat_routes_known_and_typed() {
+        assert_eq!(chat_route("/v1/chat/claude"), Some((CHAT_TXT, "text/plain; charset=utf-8")));
+        assert_eq!(chat_route("/v1/chat/claude.jsonl"), Some((CHAT_JSONL, "application/x-ndjson")));
+        assert_eq!(chat_route("/v1/chat/other"), None);
+        let tok = "s3cret";
+        for p in ["/v1/chat/claude", "/v1/chat/claude.jsonl"] {
+            assert_eq!(handle(&Method::Get, p, None, tok).0, 401);
+            assert_eq!(handle(&Method::Get, &format!("{p}?lines=5"), Some("Bearer wrong"), tok).0, 401);
+            assert_eq!(handle(&Method::Post, p, None, tok).0, 405);
+        }
+        assert_eq!(handle(&Method::Get, "/v1/chat/claude.txt", None, tok).0, 404);
     }
     #[test]
     fn feed_defaults() {
