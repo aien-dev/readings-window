@@ -37,3 +37,9 @@ tiny_http 0.12 pulls rustls 0.20 (older); acceptable for read-only data, UNVERIF
 - `GET /v1/exposure` (Bearer token) serves the file; `/health` gains `"exposure":"ok|changed|unknown"` (unknown if missing, invalid or older than 1 h).
 - First run found TCP 53 open on the public IP (DNS answered a recursive query). Source UNVERIFIED: hairpin from inside the LAN may hit the router itself rather than the hub. UDP 3478 not confirmed open by nmap (open|filtered), UNVERIFIED.
 - Registered in pi-register as `exposure-watch` (health: last-run.txt younger than 20 min).
+
+## Live Claude chat feed (added 2026-10-04)
+- Why: Drake wants the whole Claude chat stream visible to Muse on his MacBook and phone.
+- `GET /v1/chat/claude` serves `/home/drakestapleton/shared/agents/claude-chat.txt`, `GET /v1/chat/claude.jsonl` serves `claude-chat.jsonl` (Bearer token). `?lines=N` (default 500, clamped 1..50000) runs `tail -n N` on the Spark; `?all=1` runs `cat`. Only constant paths and a parsed integer reach the remote shell.
+- Proxied live over ssh on each request. NOTHING is written or cached on the hub, because its root disk is a fragile USB stick. Spark unreachable gives 502 `{"error":"spark unreachable"}`.
+- Each request blocks the single-threaded server for the ssh round trip (up to ~5 s connect timeout per host); `?all=1` on a large file is a big response. UNVERIFIED under load.
