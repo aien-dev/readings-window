@@ -16,4 +16,4 @@ A small Rust service: it collects one JSON line of readings from the Spark every
 `scripts/` holds the exposure watch: a 15-minute timer that scans our own public IP from inside the LAN (the router hairpin view, which is not the same as the internet view) and flags any change against an accepted baseline in `/etc/exposure-watch/baseline.json`.
 Operational notes, unit names and the deployment layout are in `NOTES.md`.
 
-Build: `cargo build --release`. No Python. License: Apache-2.0.
+Build: `cargo build --release`. No Python. License: AGPL-3.0-or-later (see LICENSE).
