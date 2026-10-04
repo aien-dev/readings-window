@@ -14,7 +14,7 @@
       "children": [
         {
           "digest": "fe8b6360c2144daa08e8dbb644b31829295074c853975b6ed6efd62f53978d63",
-          "last_commit": "d910ecb",
+          "last_commit": "7c5d85b",
           "name": "scripts",
           "purpose": "Directory scripts. Purpose not yet described by a human."
         },
@@ -26,14 +26,14 @@
         }
       ],
       "children_root": "sha256:2370aabb1416026f33dae6c6c8894d5d5a4d49273fb6eb98f82838bac1aca5f0",
-      "compiled_at": "2026-10-04T16:19:23Z",
+      "compiled_at": "2026-10-04T18:13:52Z",
       "compiler": "crumb-compile/1",
-      "digest": "sha256:caac4cc67120988c5a85c0ad0103060a7d0c127436d3ca0e60c9bacf831f6402",
+      "digest": "sha256:7c7ec083e888be8cd56d251e7441e4b7d2c0e0ef1d75d9f9197d119354194b50",
       "evidence_files": 0,
       "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "files": 10,
-      "generated_at_commit": "254f9acf5c43f6a24d0d9add5f5203a02b377cf3",
-      "source_tree": "sha256:fbeda7336b9b050cffca5b5b4c095fa5268e8325703dce66f43e6731e72fc006"
+      "generated_at_commit": "7c5d85b6e146aab45dddc3e6a4839e58f5f926bb",
+      "source_tree": "sha256:d560f2122cd474b22c97119ea9788af07a49425f5298d8c7053352ed045d2ef3"
     },
     "owner_lane": "",
     "seed": {
