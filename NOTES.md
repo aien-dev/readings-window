@@ -43,3 +43,10 @@ tiny_http 0.12 pulls rustls 0.20 (older); acceptable for read-only data, UNVERIF
 - `GET /v1/chat/claude` serves `/home/drakestapleton/shared/agents/claude-chat.txt`, `GET /v1/chat/claude.jsonl` serves `claude-chat.jsonl` (Bearer token). `?lines=N` (default 500, clamped 1..50000) runs `tail -n N` on the Spark; `?all=1` runs `cat`. Only constant paths and a parsed integer reach the remote shell.
 - Proxied live over ssh on each request. NOTHING is written or cached on the hub, because its root disk is a fragile USB stick. Spark unreachable gives 502 `{"error":"spark unreachable"}`.
 - Each request blocks the single-threaded server for the ssh round trip (up to ~5 s connect timeout per host); `?all=1` on a large file is a big response. UNVERIFIED under load.
+
+## Per-agent chat routes (added 2026-10-04, replaces the Claude-only feed above)
+- Why: Drake 2026-10-04 wants every agent's chat visible to Muse from one archive. Design: `~/handoffs/2026-10-04-agent-archive.md` (program `agent-archive`).
+- Allow-list, matched exactly, each name mapped to constant paths in code (the name is never put into a command): `claude`, `codex`, `opencode`, `gemini`, `muse`. `GET /v1/chat` lists them.
+- Spark files: `/home/drakestapleton/archive/agent-chats/latest/<agent>.txt|.jsonl` (rolling, last 20000 lines) and `records/<agent>/<YYYY-MM-DD>.jsonl` (complete history).
+- `?lines=N` runs `tail -n N` on the latest file. `?all=1`: plain runs `cat latest/<agent>.txt`; jsonl runs `cat records/<agent>/*.jsonl` (shell glob on the Spark, date order because file names sort by date). A missing file or an empty records folder makes the remote command fail, which shows as 502 "spark unreachable" (same code path as a real outage).
+- After the archive cutover `~/shared/agents/claude-chat.*` become symlinks to `latest/claude.*`; the hub no longer reads those paths. The hub must run this build and the archive must exist before `/v1/chat/*` returns data. Not deployed by this change.
