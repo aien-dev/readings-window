@@ -1,0 +1,8 @@
+[Unit]
+Description=Exposure watch (what the house shows to the internet)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/exposure-watch.sh

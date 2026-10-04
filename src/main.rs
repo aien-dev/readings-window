@@ -15,6 +15,9 @@ const STATUS: &str = "/var/lib/readings-window/status.json";
 const RESULTS: &str = "/var/lib/readings-window/results.json";
 const STATUS_DEFAULT: &str = r#"{"ts":0,"label":"unknown"}"#;
 const RESULTS_DEFAULT: &str = r#"{"updated":0,"results":[]}"#;
+const EXPOSURE: &str = "/var/lib/readings-window/exposure.json";
+const EXPOSURE_DEFAULT: &str = r#"{"status":"unknown"}"#;
+const EXPOSURE_STALE_SECS: u64 = 3600;
 const KEEP_SECS: u64 = 30 * 86400;
 const MAX_HOURS: u64 = 720;
 const DEFAULT_HOURS: u64 = 24;
@@ -143,6 +146,24 @@ fn feed_body(path: &str, check: fn(&str) -> Result<Value, String>, default: &str
         .unwrap_or_else(|| default.into())
 }
 
+fn validate_exposure(s: &str) -> Result<Value, String> {
+    let v: Value = serde_json::from_str(s).map_err(|e| e.to_string())?;
+    match v.get("status").and_then(Value::as_str) {
+        Some("ok") | Some("changed") => Ok(v),
+        _ => Err("bad status".into()),
+    }
+}
+
+/// "ok", "changed" or "unknown" (missing, invalid, or older than an hour).
+fn exposure_state(s: Option<&str>, now_s: u64) -> &'static str {
+    let Some(v) = s.and_then(|s| validate_exposure(s).ok()) else { return "unknown" };
+    let ts = v.get("ts").and_then(Value::as_u64).unwrap_or(0);
+    if ts == 0 || now_s.saturating_sub(ts) > EXPOSURE_STALE_SECS {
+        return "unknown";
+    }
+    if v["status"] == "ok" { "ok" } else { "changed" }
+}
+
 fn collect() -> Result<(), String> {
     let out = fetch("/usr/local/bin/spark-readings")?;
     let text = String::from_utf8_lossy(&out.stdout);
@@ -177,7 +198,7 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
         Some((p, q)) => (p, Some(q)),
         None => (url, None),
     };
-    let known = matches!(path, "/health" | "/v1/readings/current" | "/v1/readings/history" | "/v1/status" | "/v1/results");
+    let known = matches!(path, "/health" | "/v1/readings/current" | "/v1/readings/history" | "/v1/status" | "/v1/results" | "/v1/exposure");
     if !known {
         return (404, r#"{"error":"not found"}"#.into());
     }
@@ -185,13 +206,18 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
         return (405, r#"{"error":"method not allowed"}"#.into());
     }
     if path == "/health" {
-        return match last_line().and_then(|l| ts_of(&l)) {
-            Some(t) => (200, format!(r#"{{"status":"ok","last_reading_age_s":{}}}"#, now().saturating_sub(t))),
-            None => (200, r#"{"status":"ok","last_reading_age_s":null}"#.into()),
+        let ex = exposure_state(fs::read_to_string(EXPOSURE).ok().as_deref(), now());
+        let age = match last_line().and_then(|l| ts_of(&l)) {
+            Some(t) => now().saturating_sub(t).to_string(),
+            None => "null".into(),
         };
+        return (200, format!(r#"{{"status":"ok","last_reading_age_s":{age},"exposure":"{ex}"}}"#));
     }
     if !auth_ok(auth, token) {
         return (401, r#"{"error":"unauthorized"}"#.into());
+    }
+    if path == "/v1/exposure" {
+        return (200, feed_body(EXPOSURE, validate_exposure, EXPOSURE_DEFAULT));
     }
     if path == "/v1/status" {
         return (200, feed_body(STATUS, validate_status, STATUS_DEFAULT));
@@ -249,6 +275,20 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn exposure_parsing() {
+        let n = 10_000;
+        let ok = format!(r#"{{"ts":{},"status":"ok"}}"#, n - 60);
+        let ch = format!(r#"{{"ts":{},"status":"changed"}}"#, n - 60);
+        let old = format!(r#"{{"ts":{},"status":"ok"}}"#, n - 4000);
+        assert_eq!(exposure_state(Some(&ok), n), "ok");
+        assert_eq!(exposure_state(Some(&ch), n), "changed");
+        assert_eq!(exposure_state(Some(&old), n), "unknown");
+        assert_eq!(exposure_state(None, n), "unknown");
+        assert_eq!(exposure_state(Some("junk"), n), "unknown");
+        assert_eq!(exposure_state(Some(r#"{"ts":9990,"status":"weird"}"#), n), "unknown");
+    }
+
     #[test]
     fn token_compare() {
         assert!(ct_eq(b"abc", b"abc"));
