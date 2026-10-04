@@ -1,5 +1,7 @@
 #!/bin/bash
-# exposure-watch: checks what the house exposes to the internet; writes exposure.json. Scans ONLY our own public IP.
+# exposure-watch: what the house shows on its public IP, scanned from INSIDE the LAN (router hairpin view). Scans ONLY our own public IP.
+# Inside view != internet view: the router answers its own 53/80 and reflects LAN-only forwards (e.g. 9443). Baseline holds the accepted inside view; Ports in optional_tcp may come and go without alarming (the router's own 53/80 flicker in the hairpin view).
+# the real outside view is a separate, occasional check (check-host.net or similar). A change here means "something on the router or LAN moved", not proof of exposure.
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 OUT=/var/lib/readings-window/exposure.json
 STATE=/var/lib/exposure-watch
@@ -25,11 +27,13 @@ fi
 
 # baseline (first run creates it from the expected lists)
 if [ ! -s "$BASE" ]; then
-  echo '{"expected_tcp":[443,9443],"expected_udp":[3478]}' > "$BASE"
+  echo '{"vantage":"lan-hairpin","expected_tcp":[443,9443],"optional_tcp":[53,80],"expected_udp":[3478],"note":"inside view; outside check 2026-10-04 (check-host.net) showed only 443/tcp"}' > "$BASE"
   log "baseline created"
 fi
 exp_tcp=$(grep -o '"expected_tcp":\[[^]]*\]' "$BASE" | grep -o '[0-9]\+' | sort -n | tr '\n' ' ')
 exp_udp=$(grep -o '"expected_udp":\[[^]]*\]' "$BASE" | grep -o '[0-9]\+' | sort -n | tr '\n' ' ')
+opt_tcp=$(grep -o '"optional_tcp":\[[^]]*\]' "$BASE" | grep -o '[0-9]\+' | sort -n | tr '\n' ' ')
+base_note=$(grep -o '"note":"[^"]*"' "$BASE" | sed 's/^"note":"//; s/"$//')
 
 # b. scans
 PORTS="1-1024,1194,1723,2222,3000,3010,3389,4433,5000,5900,8000,8080,8443,9443,10443,18443,41641,50443"
@@ -72,9 +76,9 @@ done
 # e. compare
 changes=()
 fmt() { echo "$*" | xargs; }
-for p in $open_tcp; do [[ " $exp_tcp" == *" $p "* ]] || changes+=("TCP port $p is open to the internet and is not expected."); done
-for p in $exp_tcp;  do [[ " $open_tcp" == *" $p "* ]] || changes+=("Expected TCP port $p is not reachable from outside."); done
-for p in $open_udp; do [[ " $exp_udp" == *" $p "* ]] || changes+=("UDP port $p is open to the internet and is not expected."); done
+for p in $open_tcp; do [[ " $exp_tcp" == *" $p "* || " $opt_tcp" == *" $p "* ]] || changes+=("TCP port $p is open in the inside view and is not in the baseline."); done
+for p in $exp_tcp;  do [[ " $open_tcp" == *" $p "* ]] || changes+=("Baseline TCP port $p is not reachable in the inside view."); done
+for p in $open_udp; do [[ " $exp_udp" == *" $p "* ]] || changes+=("UDP port $p is open in the inside view and is not in the baseline."); done
 [ "$upnp" = on ] && changes+=("The router answers UPnP, so devices could open ports by themselves.")
 [ -n "$mappings" ] && changes+=("The router lists UPnP port mappings.")
 [ "$dns_ok" = false ] && changes+=("DNS does not match the public IP $ip:$dns_detail.")
@@ -85,8 +89,8 @@ jarr() { local o="" x; for x in "$@"; do o="$o${o:+,}$x"; done; echo "[$o]"; }
 sarr() { local o="" x; for x in "$@"; do o="$o${o:+,}\"$x\""; done; echo "[$o]"; }
 mapjson=$(printf '%s\n' "$mappings" | sed '/^$/d' | sed 's/^/"/; s/$/"/' | paste -sd, -)
 chjson=""; for c in "${changes[@]}"; do chjson="$chjson${chjson:+,}\"${c//\"/\\\"}\""; done
-json=$(printf '{"ts":%s,"public_ip":"%s","open_tcp":%s,"open_udp":%s,"upnp":"%s","upnp_mappings":[%s],"dns_ok":%s,"expected_tcp":%s,"expected_udp":%s,"status":"%s","changes":[%s]}' \
-  "$ts" "$ip" "$(jarr $open_tcp)" "$(jarr $open_udp)" "$upnp" "$mapjson" "$dns_ok" "$(jarr $exp_tcp)" "$(jarr $exp_udp)" "$status" "$chjson")
+json=$(printf '{"ts":%s,"vantage":"lan-hairpin","baseline_note":"%s","public_ip":"%s","open_tcp":%s,"open_udp":%s,"upnp":"%s","upnp_mappings":[%s],"dns_ok":%s,"expected_tcp":%s,"optional_tcp":%s,"expected_udp":%s,"status":"%s","changes":[%s]}' \
+  "$ts" "${base_note//\"/}" "$ip" "$(jarr $open_tcp)" "$(jarr $open_udp)" "$upnp" "$mapjson" "$dns_ok" "$(jarr $exp_tcp)" "$(jarr $opt_tcp)" "$(jarr $exp_udp)" "$status" "$chjson")
 echo "$json" > "$OUT.tmp" && chmod 644 "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 [ "$status" = changed ] && echo "$json" >> "$STATE/alerts.log"
 log "status=$status end $(date -u +%FT%TZ)"

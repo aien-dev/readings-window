@@ -13,7 +13,7 @@ A small Rust service: it collects one JSON line of readings from the Spark every
 - `readings-window collect`: fetch one reading from the Spark and append it to the history file.
 - `readings-window serve`: HTTPS server on port 9443.
 
-`scripts/` holds the exposure watch (a timer that checks what the house exposes to the internet, scanning only our own public IP).
+`scripts/` holds the exposure watch: a 15-minute timer that scans our own public IP from inside the LAN (the router hairpin view, which is not the same as the internet view) and flags any change against an accepted baseline in `/etc/exposure-watch/baseline.json`.
 Operational notes, unit names and the deployment layout are in `NOTES.md`.
 
 Build: `cargo build --release`. No Python. License: Apache-2.0.
