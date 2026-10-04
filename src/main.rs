@@ -156,7 +156,7 @@ fn serve() -> Result<(), String> {
         certificate: fs::read(CERT).map_err(|e| format!("cert: {e}"))?,
         private_key: fs::read(KEY).map_err(|e| format!("key: {e}"))?,
     };
-    let server = Server::https("0.0.0.0:8443", ssl).map_err(|e| format!("bind: {e}"))?;
+    let server = Server::https("0.0.0.0:9443", ssl).map_err(|e| format!("bind: {e}"))?;
     for req in server.incoming_requests() {
         let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.to_string());
         let (code, body) = handle(req.method(), req.url(), auth.as_deref(), &token);
