@@ -187,13 +187,44 @@ fn last_line() -> Option<String> {
     fs::read_to_string(HISTORY).ok()?.lines().rev().find(|l| ts_of(l).is_some()).map(String::from)
 }
 
-const CHAT_TXT: &str = "/home/drakestapleton/shared/agents/claude-chat.txt";
-const CHAT_JSONL: &str = "/home/drakestapleton/shared/agents/claude-chat.jsonl";
 const CHAT_DEFAULT_LINES: u64 = 500;
 const CHAT_MAX_LINES: u64 = 50000;
 const JSON_TYPE: &str = "application/json";
 const TEXT_TYPE: &str = "text/plain; charset=utf-8";
 const NDJSON_TYPE: &str = "application/x-ndjson";
+
+/// One allowed agent: every remote path is a constant, never built from request input.
+struct Agent {
+    name: &'static str,
+    latest_txt: &'static str,
+    latest_jsonl: &'static str,
+    records_glob: &'static str,
+}
+
+macro_rules! agent {
+    ($n:literal) => {
+        Agent {
+            name: $n,
+            latest_txt: concat!("/home/drakestapleton/archive/agent-chats/latest/", $n, ".txt"),
+            latest_jsonl: concat!("/home/drakestapleton/archive/agent-chats/latest/", $n, ".jsonl"),
+            records_glob: concat!("/home/drakestapleton/archive/agent-chats/records/", $n, "/*.jsonl"),
+        }
+    };
+}
+
+/// The fixed allow-list, matched exactly.
+const AGENTS: [Agent; 5] = [agent!("claude"), agent!("codex"), agent!("opencode"), agent!("gemini"), agent!("muse")];
+const AGENTS_JSON: &str = r#"{"agents":["claude","codex","opencode","gemini","muse"]}"#;
+
+/// What one chat request reads on the Spark.
+#[derive(Debug, PartialEq)]
+struct ChatFeed {
+    /// Rolling window file, read with `tail` (and with `cat` for `?all=1` on plain text).
+    latest: &'static str,
+    /// What `?all=1` reads: the same file (plain) or the records glob (jsonl).
+    all: &'static str,
+    ctype: &'static str,
+}
 
 /// Number of lines asked for in `?lines=N`: default 500, clamped to 1..=50000.
 fn clamp_lines(q: Option<&str>) -> u64 {
@@ -204,30 +235,36 @@ fn clamp_lines(q: Option<&str>) -> u64 {
     n.clamp(1, CHAT_MAX_LINES)
 }
 
-/// Remote command for a chat feed: only a constant path and a validated integer reach the shell.
-fn chat_command(path: &'static str, q: Option<&str>) -> String {
+/// Remote command for a chat feed: only constant paths and a validated integer reach the shell.
+fn chat_command(feed: &ChatFeed, q: Option<&str>) -> String {
     if q.is_some_and(|q| q.split('&').any(|kv| kv == "all=1")) {
-        format!("cat {path}")
+        format!("cat {}", feed.all)
     } else {
-        format!("tail -n {} {path}", clamp_lines(q))
+        format!("tail -n {} {}", clamp_lines(q), feed.latest)
     }
 }
 
-/// Chat feed paths: (file on the Spark, content type).
-fn chat_route(path: &str) -> Option<(&'static str, &'static str)> {
-    match path {
-        "/v1/chat/claude" => Some((CHAT_TXT, TEXT_TYPE)),
-        "/v1/chat/claude.jsonl" => Some((CHAT_JSONL, NDJSON_TYPE)),
-        _ => None,
-    }
+/// `/v1/chat/<agent>` and `/v1/chat/<agent>.jsonl` for allow-listed agents only.
+fn chat_route(path: &str) -> Option<ChatFeed> {
+    let rest = path.strip_prefix("/v1/chat/")?;
+    let (name, jsonl) = match rest.strip_suffix(".jsonl") {
+        Some(n) => (n, true),
+        None => (rest, false),
+    };
+    let a = AGENTS.iter().find(|a| a.name == name)?;
+    Some(if jsonl {
+        ChatFeed { latest: a.latest_jsonl, all: a.records_glob, ctype: NDJSON_TYPE }
+    } else {
+        ChatFeed { latest: a.latest_txt, all: a.latest_txt, ctype: TEXT_TYPE }
+    })
 }
 
 /// Proxy a chat feed live from the Spark; nothing is written or cached on the hub.
-fn chat_feed(path: &'static str, ctype: &'static str, q: Option<&str>) -> (u16, String, &'static str) {
-    match fetch(&chat_command(path, q)) {
-        Ok(o) => (200, String::from_utf8_lossy(&o.stdout).into_owned(), ctype),
+fn chat_feed(feed: &ChatFeed, q: Option<&str>) -> (u16, String, &'static str) {
+    match fetch(&chat_command(feed, q)) {
+        Ok(o) => (200, String::from_utf8_lossy(&o.stdout).into_owned(), feed.ctype),
         Err(e) => {
-            eprintln!("readings-window: chat feed {path}: {e}");
+            eprintln!("readings-window: chat feed {}: {e}", feed.latest);
             (502, r#"{"error":"spark unreachable"}"#.into(), JSON_TYPE)
         }
     }
@@ -244,7 +281,8 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
         Some((p, q)) => (p, Some(q)),
         None => (url, None),
     };
-    let known = matches!(path, "/health" | "/v1/readings/current" | "/v1/readings/history" | "/v1/status" | "/v1/results" | "/v1/exposure" | "/v1/chat/claude" | "/v1/chat/claude.jsonl");
+    let chat = chat_route(path);
+    let known = chat.is_some() || matches!(path, "/health" | "/v1/readings/current" | "/v1/readings/history" | "/v1/status" | "/v1/results" | "/v1/exposure" | "/v1/chat");
     if !known {
         return (404, r#"{"error":"not found"}"#.into(), JSON_TYPE);
     }
@@ -271,8 +309,11 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
     if path == "/v1/results" {
         return (200, feed_body(RESULTS, validate_results, RESULTS_DEFAULT), JSON_TYPE);
     }
-    if let Some((file, ctype)) = chat_route(path) {
-        return chat_feed(file, ctype, query);
+    if path == "/v1/chat" {
+        return (200, AGENTS_JSON.into(), JSON_TYPE);
+    }
+    if let Some(feed) = &chat {
+        return chat_feed(feed, query);
     }
     if path == "/v1/readings/current" {
         return match last_line() {
@@ -396,27 +437,63 @@ mod tests {
         assert_eq!(clamp_lines(Some("lines=1;rm -rf /")), 500);
         assert_eq!(clamp_lines(Some("lines=-5")), 500);
     }
-    #[test]
-    fn chat_commands() {
-        assert_eq!(chat_command(CHAT_TXT, None), "tail -n 500 /home/drakestapleton/shared/agents/claude-chat.txt");
-        assert_eq!(chat_command(CHAT_TXT, Some("lines=60000")), "tail -n 50000 /home/drakestapleton/shared/agents/claude-chat.txt");
-        assert_eq!(chat_command(CHAT_TXT, Some("all=1")), "cat /home/drakestapleton/shared/agents/claude-chat.txt");
-        assert_eq!(chat_command(CHAT_JSONL, Some("lines=7&all=1")), "cat /home/drakestapleton/shared/agents/claude-chat.jsonl");
-        assert_eq!(chat_command(CHAT_JSONL, Some("lines=7")), "tail -n 7 /home/drakestapleton/shared/agents/claude-chat.jsonl");
-        assert_eq!(chat_command(CHAT_JSONL, Some("all=1;id")), "tail -n 500 /home/drakestapleton/shared/agents/claude-chat.jsonl");
+    const A: &str = "/home/drakestapleton/archive/agent-chats";
+    fn route(p: &str) -> ChatFeed {
+        chat_route(p).unwrap()
     }
     #[test]
-    fn chat_routes_known_and_typed() {
-        assert_eq!(chat_route("/v1/chat/claude"), Some((CHAT_TXT, "text/plain; charset=utf-8")));
-        assert_eq!(chat_route("/v1/chat/claude.jsonl"), Some((CHAT_JSONL, "application/x-ndjson")));
-        assert_eq!(chat_route("/v1/chat/other"), None);
-        let tok = "s3cret";
-        for p in ["/v1/chat/claude", "/v1/chat/claude.jsonl"] {
-            assert_eq!(handle(&Method::Get, p, None, tok).0, 401);
-            assert_eq!(handle(&Method::Get, &format!("{p}?lines=5"), Some("Bearer wrong"), tok).0, 401);
-            assert_eq!(handle(&Method::Post, p, None, tok).0, 405);
+    fn chat_commands_plain() {
+        let f = route("/v1/chat/codex");
+        let t = format!("{A}/latest/codex.txt");
+        assert_eq!(chat_command(&f, None), format!("tail -n 500 {t}"));
+        assert_eq!(chat_command(&f, Some("lines=60000")), format!("tail -n 50000 {t}"));
+        assert_eq!(chat_command(&f, Some("lines=7")), format!("tail -n 7 {t}"));
+        assert_eq!(chat_command(&f, Some("all=1")), format!("cat {t}"));
+        assert_eq!(chat_command(&f, Some("all=1;id")), format!("tail -n 500 {t}"));
+    }
+    #[test]
+    fn chat_commands_jsonl() {
+        let f = route("/v1/chat/opencode.jsonl");
+        assert_eq!(chat_command(&f, None), format!("tail -n 500 {A}/latest/opencode.jsonl"));
+        assert_eq!(chat_command(&f, Some("lines=7&all=1")), format!("cat {A}/records/opencode/*.jsonl"));
+        assert_eq!(chat_command(&f, Some("all=1")), format!("cat {A}/records/opencode/*.jsonl"));
+    }
+    #[test]
+    fn chat_allow_list() {
+        for a in ["claude", "codex", "opencode", "gemini", "muse"] {
+            assert_eq!(route(&format!("/v1/chat/{a}")).ctype, "text/plain; charset=utf-8");
+            assert_eq!(route(&format!("/v1/chat/{a}.jsonl")).ctype, "application/x-ndjson");
+            assert_eq!(route(&format!("/v1/chat/{a}")).latest, format!("{A}/latest/{a}.txt"));
         }
+        for bad in ["/v1/chat/other", "/v1/chat/claude.txt", "/v1/chat/", "/v1/chat/claude/", "/v1/chat/Claude",
+                    "/v1/chat/../claude", "/v1/chat/claude.jsonl.jsonl", "/v1/chat/.jsonl", "/v1/chat/claude;id"] {
+            assert_eq!(chat_route(bad), None, "{bad}");
+        }
+        let tok = "s3cret";
+        assert_eq!(handle(&Method::Get, "/v1/chat/other", Some("Bearer s3cret"), tok).0, 404);
         assert_eq!(handle(&Method::Get, "/v1/chat/claude.txt", None, tok).0, 404);
+    }
+    #[test]
+    fn chat_auth_and_method() {
+        let tok = "s3cret";
+        let mut paths: Vec<String> = vec!["/v1/chat".into()];
+        for a in ["claude", "codex", "opencode", "gemini", "muse"] {
+            paths.push(format!("/v1/chat/{a}"));
+            paths.push(format!("/v1/chat/{a}.jsonl"));
+        }
+        for p in &paths {
+            assert_eq!(handle(&Method::Get, p, None, tok).0, 401, "{p}");
+            assert_eq!(handle(&Method::Get, &format!("{p}?lines=5"), Some("Bearer wrong"), tok).0, 401, "{p}");
+            assert_eq!(handle(&Method::Post, p, None, tok).0, 405, "{p}");
+        }
+    }
+    #[test]
+    fn chat_agent_list() {
+        let (code, body, ctype) = handle(&Method::Get, "/v1/chat", Some("Bearer s3cret"), "s3cret");
+        assert_eq!((code, ctype), (200, "application/json"));
+        assert_eq!(body, r#"{"agents":["claude","codex","opencode","gemini","muse"]}"#);
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["agents"].as_array().unwrap().len(), AGENTS.len());
     }
     #[test]
     fn feed_defaults() {

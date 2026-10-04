@@ -7,7 +7,8 @@ A small Rust service: it collects one JSON line of readings from the Spark every
 - `GET /health`: liveness plus an `exposure` field (`ok|changed|unknown`).
 - `GET /v1/readings/current`, `GET /v1/readings/history?hours=N` (default 24, max 720).
 - `GET /v1/status`, `GET /v1/results`, `GET /v1/exposure`.
-- `GET /v1/chat/claude?lines=N` (text, last N lines, default 500, max 50000; `?all=1` for the whole file) and `GET /v1/chat/claude.jsonl` (same, raw JSON lines, `application/x-ndjson`): the live Claude chat feed, proxied from the Spark on every request (no hub disk writes). 502 `{"error":"spark unreachable"}` if the Spark cannot be reached.
+- `GET /v1/chat` returns `{"agents":["claude","codex","opencode","gemini","muse"]}` so a client can discover the feeds.
+- `GET /v1/chat/<agent>` (plain text) and `GET /v1/chat/<agent>.jsonl` (common JSON records, `application/x-ndjson`) for exactly those five agents; any other name is 404. `?lines=N` gives the last N lines (default 500, max 50000) of the rolling window of the agent archive. `?all=1` gives the whole rolling window (plain) or the complete record history, all dates in order (jsonl). Proxied live from the Spark on every request (no hub disk writes). 502 `{"error":"spark unreachable"}` if the Spark cannot be reached.
 - All `/v1/*` routes need `Authorization: Bearer <token>`. The token and the TLS key live on the hub only (`/etc/readings-window/`), never in this repository.
 
 ## Commands
