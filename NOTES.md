@@ -25,3 +25,8 @@ Fields: ts, gpu_util_pct, gpu_temp_c, gpu_power_w, load1, load5, load15, cpu_tem
 Wrong/missing token 401; unknown path 404; non-GET 405.
 Note: cpu_temp_c is max over all thermal zones (the Spark's zones are all type "acpitz", none say "cpu").
 tiny_http 0.12 pulls rustls 0.20 (older); acceptable for read-only data, UNVERIFIED against heavy scanning.
+
+## Status and results feeds (added 2026-10-04)
+- Spark files (written by the orchestrator, see ~/status/README.md): `~/status/current.json`, `~/status/results.json`.
+- `collect` also runs `ssh ... cat <file>` for each, validates the JSON, and caches to `/var/lib/readings-window/{status,results}.json` (atomic rename). Bad or missing file: old cache kept.
+- `GET /v1/status` and `GET /v1/results` (Bearer token) serve the cache; defaults `{"ts":0,"label":"unknown"}` and `{"updated":0,"results":[]}` if none. History format unchanged. No new unit or timer, so pi-register entries are unchanged.
