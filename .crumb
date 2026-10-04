@@ -1,0 +1,59 @@
+{
+  "below": [
+    {
+      "name": "scripts",
+      "role": ""
+    },
+    {
+      "name": "src",
+      "role": ""
+    }
+  ],
+  "extensions": {
+    "generated": {
+      "children": [
+        {
+          "digest": "8de654ee8668d45e418ecbd819d728be14048b313004d939fc2dce7501e5c2fa",
+          "last_commit": "d910ecb",
+          "name": "scripts",
+          "purpose": "Directory scripts. Purpose not yet described by a human."
+        },
+        {
+          "digest": "20c1764543006c90f64ad969c0beb862ff4d0d156473bcf77286188fd1dc93dc",
+          "last_commit": "d910ecb",
+          "name": "src",
+          "purpose": "Directory src. Purpose not yet described by a human."
+        }
+      ],
+      "children_root": "sha256:a45c5b9cdd45beb6ee01b85df15800509a639ed4b73198e9354de38df03ad84f",
+      "compiled_at": "2026-10-04T15:56:29Z",
+      "compiler": "crumb-compile/1",
+      "digest": "sha256:3dda3aa14dcb7043e0fa18309db58ae4ea5b8a4faa4dfcde25150f7beb36ee68",
+      "evidence_files": 0,
+      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "files": 8,
+      "generated_at_commit": "d910ecbfcd8224bc8520bdeda3ecc172fe69d6f5",
+      "source_tree": "sha256:a893006694e3435e1f76568a4f90b77cda6275b53a45e3561d2d62afd2e30fe6"
+    },
+    "owner_lane": "",
+    "seed": {
+      "files": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "LICENSE",
+        "NOTES.md",
+        "README.md"
+      ],
+      "git": {
+        "branch": "main",
+        "head": "d910ecb",
+        "remote": ""
+      },
+      "purpose_auto": "Repository root readings-window. Purpose not yet described by a human."
+    }
+  },
+  "layer": "root",
+  "name": "readings-window",
+  "purpose": "Read-only, token-protected HTTPS window onto the Spark's GPU/CPU readings, served from the Pi hub (Rust crate + exposure-watch scripts)",
+  "schema_version": "1.0.0"
+}

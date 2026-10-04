@@ -1,0 +1,33 @@
+{
+  "above": {
+    "name": "readings-window",
+    "path": ".."
+  },
+  "extensions": {
+    "generated": {
+      "children": [],
+      "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compiled_at": "2026-10-04T15:56:29Z",
+      "compiler": "crumb-compile/1",
+      "digest": "sha256:8de654ee8668d45e418ecbd819d728be14048b313004d939fc2dce7501e5c2fa",
+      "evidence_files": 0,
+      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "files": 3,
+      "generated_at_commit": "d910ecbfcd8224bc8520bdeda3ecc172fe69d6f5",
+      "source_tree": "sha256:6291570551e299211513a4d37f46eb08fe38363c1d3b6f3567f82d1479076231"
+    },
+    "owner_lane": "",
+    "seed": {
+      "files": [
+        "exposure-watch.service",
+        "exposure-watch.sh",
+        "exposure-watch.timer"
+      ],
+      "purpose_auto": "Directory scripts. Purpose not yet described by a human."
+    }
+  },
+  "layer": "scripts",
+  "name": "scripts",
+  "purpose": "Directory scripts. Purpose not yet described by a human.",
+  "schema_version": "1.0.0"
+}
