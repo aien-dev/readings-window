@@ -24,7 +24,7 @@ Read-only, token-protected HTTPS window onto the Spark's GPU/CPU readings, hoste
 Fields: ts, gpu_util_pct, gpu_temp_c, gpu_power_w, load1, load5, load15, cpu_temp_c, mem_used_mb, mem_total_mb.
 Wrong/missing token 401; unknown path 404; non-GET 405.
 Note: cpu_temp_c is max over all thermal zones (the Spark's zones are all type "acpitz", none say "cpu").
-tiny_http 0.12 pulls rustls 0.20 (older); acceptable for read-only data, UNVERIFIED against heavy scanning.
+TLS is terminated by rustls 0.23 (ring provider, TLS 1.2 and 1.3 only) in `src/tls.rs`; a minimal HTTP/1.1 reader (one request per connection, 16 KiB head cap, 64 connections max) replaced tiny_http, which pinned rustls 0.20 (RUSTSEC-2024-0336).
 
 ## Status and results feeds (added 2026-10-04)
 - Spark files (written by the orchestrator, see ~/status/README.md): `~/status/current.json`, `~/status/results.json`.
