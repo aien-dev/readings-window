@@ -2,7 +2,7 @@
 
 A read-only, token-protected HTTPS window onto the Spark's GPU and CPU readings, served from the project's Raspberry Pi house server.
 
-Supports [Aienix](https://github.com/aien-dev/aienix), the core tree of AIEN. It lets the people and agents working on AIEN see how the development machine is doing without logging in to it.
+Supports [AienOS](https://github.com/aien-dev/aienix), the core tree of AIEN. It lets the people and agents working on AIEN see how the development machine is doing without logging in to it.
 
 **Status (2026-10-18): running.** The health endpoint answered with status ok when checked on 2026-10-17. The code was last changed on 2026-10-04 (the chat feed routes); the last change of any kind was a README correction on 2026-10-13.
 
