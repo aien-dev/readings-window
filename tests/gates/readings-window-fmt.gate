@@ -1,0 +1,23 @@
+gate: READINGS_WINDOW-FMT
+manifest_version: 2
+owner: readings-window
+requires:
+  - host
+inputs:
+  - Cargo.toml
+  - Cargo.lock
+  - src/
+  - crates/
+  - tests/
+  - tests/gates/
+  - src/
+  - scripts/
+run:
+  exec: tests/gates/run.sh
+  args: ["fmt"]
+expects:
+  exit: 0
+  verdict: PASS
+timeout: 5m
+exactness: EXACT
+cache_scope: portable
