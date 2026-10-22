@@ -22,12 +22,23 @@ const KEEP_SECS: u64 = 30 * 86400;
 const MAX_HOURS: u64 = 720;
 const DEFAULT_HOURS: u64 = 24;
 const FIELDS: [&str; 10] = [
-    "ts", "gpu_util_pct", "gpu_temp_c", "gpu_power_w", "load1", "load5", "load15",
-    "cpu_temp_c", "mem_used_mb", "mem_total_mb",
+    "ts",
+    "gpu_util_pct",
+    "gpu_temp_c",
+    "gpu_power_w",
+    "load1",
+    "load5",
+    "load15",
+    "cpu_temp_c",
+    "mem_used_mb",
+    "mem_total_mb",
 ];
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Constant-time equality (length leak only).
@@ -54,12 +65,17 @@ fn clamp_hours(q: Option<&str>) -> u64 {
 }
 
 fn ts_of(line: &str) -> Option<u64> {
-    serde_json::from_str::<Value>(line).ok()?.get("ts")?.as_u64()
+    serde_json::from_str::<Value>(line)
+        .ok()?
+        .get("ts")?
+        .as_u64()
 }
 
 /// Lines whose ts is at or after `cutoff`.
 fn filter_since<'a>(lines: impl Iterator<Item = &'a str>, cutoff: u64) -> Vec<&'a str> {
-    lines.filter(|l| ts_of(l).is_some_and(|t| t >= cutoff)).collect()
+    lines
+        .filter(|l| ts_of(l).is_some_and(|t| t >= cutoff))
+        .collect()
 }
 
 fn validate(line: &str) -> Result<Value, String> {
@@ -80,8 +96,16 @@ fn fetch(remote: &str) -> Result<std::process::Output, String> {
     let mut last = String::from("no hosts");
     for host in SPARK_HOSTS {
         let r = Command::new("ssh")
-            .args(["-i", "/root/.ssh/id_ed25519_headscale_backup", "-o", "BatchMode=yes",
-                   "-o", "ConnectTimeout=5", &format!("drakestapleton@{host}"), remote])
+            .args([
+                "-i",
+                "/root/.ssh/id_ed25519_headscale_backup",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=5",
+                &format!("drakestapleton@{host}"),
+                remote,
+            ])
             .output();
         match r {
             Ok(o) if o.status.success() => return Ok(o),
@@ -95,8 +119,12 @@ fn fetch(remote: &str) -> Result<std::process::Output, String> {
 /// Status feed: object with integer ts and string label.
 fn validate_status(s: &str) -> Result<Value, String> {
     let v: Value = serde_json::from_str(s.trim()).map_err(|e| format!("bad json: {e}"))?;
-    v.get("ts").and_then(Value::as_u64).ok_or("status: ts not integer")?;
-    v.get("label").and_then(Value::as_str).ok_or("status: label not string")?;
+    v.get("ts")
+        .and_then(Value::as_u64)
+        .ok_or("status: ts not integer")?;
+    v.get("label")
+        .and_then(Value::as_str)
+        .ok_or("status: label not string")?;
     if v.get("detail").is_some_and(|d| !d.is_string()) {
         return Err("status: detail not string".into());
     }
@@ -106,11 +134,18 @@ fn validate_status(s: &str) -> Result<Value, String> {
 /// Results feed: integer updated, list of {name, verdict, date, receipt, note?}.
 fn validate_results(s: &str) -> Result<Value, String> {
     let v: Value = serde_json::from_str(s.trim()).map_err(|e| format!("bad json: {e}"))?;
-    v.get("updated").and_then(Value::as_u64).ok_or("results: updated not integer")?;
-    let list = v.get("results").and_then(Value::as_array).ok_or("results: results not a list")?;
+    v.get("updated")
+        .and_then(Value::as_u64)
+        .ok_or("results: updated not integer")?;
+    let list = v
+        .get("results")
+        .and_then(Value::as_array)
+        .ok_or("results: results not a list")?;
     for r in list {
         for k in ["name", "date", "receipt"] {
-            r.get(k).and_then(Value::as_str).ok_or(format!("results: {k} not string"))?;
+            r.get(k)
+                .and_then(Value::as_str)
+                .ok_or(format!("results: {k} not string"))?;
         }
         match r.get("verdict").and_then(Value::as_str) {
             Some("PASS" | "FAIL" | "INCONCLUSIVE") => {}
@@ -156,12 +191,18 @@ fn validate_exposure(s: &str) -> Result<Value, String> {
 
 /// "ok", "changed" or "unknown" (missing, invalid, or older than an hour).
 fn exposure_state(s: Option<&str>, now_s: u64) -> &'static str {
-    let Some(v) = s.and_then(|s| validate_exposure(s).ok()) else { return "unknown" };
+    let Some(v) = s.and_then(|s| validate_exposure(s).ok()) else {
+        return "unknown";
+    };
     let ts = v.get("ts").and_then(Value::as_u64).unwrap_or(0);
     if ts == 0 || now_s.saturating_sub(ts) > EXPOSURE_STALE_SECS {
         return "unknown";
     }
-    if v["status"] == "ok" { "ok" } else { "changed" }
+    if v["status"] == "ok" {
+        "ok"
+    } else {
+        "changed"
+    }
 }
 
 fn collect() -> Result<(), String> {
@@ -179,12 +220,19 @@ fn collect() -> Result<(), String> {
     keep.push_str(&compact);
     keep.push('\n');
     let tmp = format!("{HISTORY}.tmp");
-    fs::File::create(&tmp).and_then(|mut f| f.write_all(keep.as_bytes())).map_err(|e| e.to_string())?;
+    fs::File::create(&tmp)
+        .and_then(|mut f| f.write_all(keep.as_bytes()))
+        .map_err(|e| e.to_string())?;
     fs::rename(&tmp, HISTORY).map_err(|e| e.to_string())
 }
 
 fn last_line() -> Option<String> {
-    fs::read_to_string(HISTORY).ok()?.lines().rev().find(|l| ts_of(l).is_some()).map(String::from)
+    fs::read_to_string(HISTORY)
+        .ok()?
+        .lines()
+        .rev()
+        .find(|l| ts_of(l).is_some())
+        .map(String::from)
 }
 
 const CHAT_DEFAULT_LINES: u64 = 500;
@@ -205,15 +253,33 @@ macro_rules! agent {
     ($n:literal) => {
         Agent {
             name: $n,
-            latest_txt: concat!("/home/drakestapleton/archive/agent-chats/latest/", $n, ".txt"),
-            latest_jsonl: concat!("/home/drakestapleton/archive/agent-chats/latest/", $n, ".jsonl"),
-            records_glob: concat!("/home/drakestapleton/archive/agent-chats/records/", $n, "/*.jsonl"),
+            latest_txt: concat!(
+                "/home/drakestapleton/archive/agent-chats/latest/",
+                $n,
+                ".txt"
+            ),
+            latest_jsonl: concat!(
+                "/home/drakestapleton/archive/agent-chats/latest/",
+                $n,
+                ".jsonl"
+            ),
+            records_glob: concat!(
+                "/home/drakestapleton/archive/agent-chats/records/",
+                $n,
+                "/*.jsonl"
+            ),
         }
     };
 }
 
 /// The fixed allow-list, matched exactly.
-const AGENTS: [Agent; 5] = [agent!("claude"), agent!("codex"), agent!("opencode"), agent!("gemini"), agent!("muse")];
+const AGENTS: [Agent; 5] = [
+    agent!("claude"),
+    agent!("codex"),
+    agent!("opencode"),
+    agent!("gemini"),
+    agent!("muse"),
+];
 const AGENTS_JSON: &str = r#"{"agents":["claude","codex","opencode","gemini","muse"]}"#;
 
 /// What one chat request reads on the Spark.
@@ -253,16 +319,28 @@ fn chat_route(path: &str) -> Option<ChatFeed> {
     };
     let a = AGENTS.iter().find(|a| a.name == name)?;
     Some(if jsonl {
-        ChatFeed { latest: a.latest_jsonl, all: a.records_glob, ctype: NDJSON_TYPE }
+        ChatFeed {
+            latest: a.latest_jsonl,
+            all: a.records_glob,
+            ctype: NDJSON_TYPE,
+        }
     } else {
-        ChatFeed { latest: a.latest_txt, all: a.latest_txt, ctype: TEXT_TYPE }
+        ChatFeed {
+            latest: a.latest_txt,
+            all: a.latest_txt,
+            ctype: TEXT_TYPE,
+        }
     })
 }
 
 /// Proxy a chat feed live from the Spark; nothing is written or cached on the hub.
 fn chat_feed(feed: &ChatFeed, q: Option<&str>) -> (u16, String, &'static str) {
     match fetch(&chat_command(feed, q)) {
-        Ok(o) => (200, String::from_utf8_lossy(&o.stdout).into_owned(), feed.ctype),
+        Ok(o) => (
+            200,
+            String::from_utf8_lossy(&o.stdout).into_owned(),
+            feed.ctype,
+        ),
         Err(e) => {
             eprintln!("readings-window: chat feed {}: {e}", feed.latest);
             (502, r#"{"error":"spark unreachable"}"#.into(), JSON_TYPE)
@@ -276,13 +354,28 @@ fn resp(code: u16, ctype: &str, body: String) -> Response<std::io::Cursor<Vec<u8
         .with_header(Header::from_bytes("Content-Type", ctype).unwrap())
 }
 
-fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, String, &'static str) {
+fn handle(
+    method: &Method,
+    url: &str,
+    auth: Option<&str>,
+    token: &str,
+) -> (u16, String, &'static str) {
     let (path, query) = match url.split_once('?') {
         Some((p, q)) => (p, Some(q)),
         None => (url, None),
     };
     let chat = chat_route(path);
-    let known = chat.is_some() || matches!(path, "/health" | "/v1/readings/current" | "/v1/readings/history" | "/v1/status" | "/v1/results" | "/v1/exposure" | "/v1/chat");
+    let known = chat.is_some()
+        || matches!(
+            path,
+            "/health"
+                | "/v1/readings/current"
+                | "/v1/readings/history"
+                | "/v1/status"
+                | "/v1/results"
+                | "/v1/exposure"
+                | "/v1/chat"
+        );
     if !known {
         return (404, r#"{"error":"not found"}"#.into(), JSON_TYPE);
     }
@@ -295,19 +388,35 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
             Some(t) => now().saturating_sub(t).to_string(),
             None => "null".into(),
         };
-        return (200, format!(r#"{{"status":"ok","last_reading_age_s":{age},"exposure":"{ex}"}}"#), JSON_TYPE);
+        return (
+            200,
+            format!(r#"{{"status":"ok","last_reading_age_s":{age},"exposure":"{ex}"}}"#),
+            JSON_TYPE,
+        );
     }
     if !auth_ok(auth, token) {
         return (401, r#"{"error":"unauthorized"}"#.into(), JSON_TYPE);
     }
     if path == "/v1/exposure" {
-        return (200, feed_body(EXPOSURE, validate_exposure, EXPOSURE_DEFAULT), JSON_TYPE);
+        return (
+            200,
+            feed_body(EXPOSURE, validate_exposure, EXPOSURE_DEFAULT),
+            JSON_TYPE,
+        );
     }
     if path == "/v1/status" {
-        return (200, feed_body(STATUS, validate_status, STATUS_DEFAULT), JSON_TYPE);
+        return (
+            200,
+            feed_body(STATUS, validate_status, STATUS_DEFAULT),
+            JSON_TYPE,
+        );
     }
     if path == "/v1/results" {
-        return (200, feed_body(RESULTS, validate_results, RESULTS_DEFAULT), JSON_TYPE);
+        return (
+            200,
+            feed_body(RESULTS, validate_results, RESULTS_DEFAULT),
+            JSON_TYPE,
+        );
     }
     if path == "/v1/chat" {
         return (200, AGENTS_JSON.into(), JSON_TYPE);
@@ -328,7 +437,10 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
 }
 
 fn serve() -> Result<(), String> {
-    let token = fs::read_to_string(TOKEN).map_err(|e| format!("token: {e}"))?.trim().to_string();
+    let token = fs::read_to_string(TOKEN)
+        .map_err(|e| format!("token: {e}"))?
+        .trim()
+        .to_string();
     if token.len() < 32 {
         return Err("token too short".into());
     }
@@ -338,7 +450,11 @@ fn serve() -> Result<(), String> {
     };
     let server = Server::https("0.0.0.0:9443", ssl).map_err(|e| format!("bind: {e}"))?;
     for req in server.incoming_requests() {
-        let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.to_string());
+        let auth = req
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("Authorization"))
+            .map(|h| h.value.to_string());
         let (code, body, ctype) = handle(req.method(), req.url(), auth.as_deref(), &token);
         let _ = req.respond(resp(code, ctype, body));
     }
@@ -349,8 +465,16 @@ fn main() {
     let r = match std::env::args().nth(1).as_deref() {
         Some("collect") => {
             let r = collect();
-            collect_feed("/home/drakestapleton/status/current.json", STATUS, validate_status);
-            collect_feed("/home/drakestapleton/status/results.json", RESULTS, validate_results);
+            collect_feed(
+                "/home/drakestapleton/status/current.json",
+                STATUS,
+                validate_status,
+            );
+            collect_feed(
+                "/home/drakestapleton/status/results.json",
+                RESULTS,
+                validate_results,
+            );
             r
         }
         Some("serve") => serve(),
@@ -376,7 +500,10 @@ mod tests {
         assert_eq!(exposure_state(Some(&old), n), "unknown");
         assert_eq!(exposure_state(None, n), "unknown");
         assert_eq!(exposure_state(Some("junk"), n), "unknown");
-        assert_eq!(exposure_state(Some(r#"{"ts":9990,"status":"weird"}"#), n), "unknown");
+        assert_eq!(
+            exposure_state(Some(r#"{"ts":9990,"status":"weird"}"#), n),
+            "unknown"
+        );
     }
 
     #[test]
@@ -400,7 +527,10 @@ mod tests {
     #[test]
     fn history_filter() {
         let l = ["{\"ts\":100}", "{\"ts\":200}", "garbage", "{\"ts\":300}"];
-        assert_eq!(filter_since(l.into_iter(), 200), vec!["{\"ts\":200}", "{\"ts\":300}"]);
+        assert_eq!(
+            filter_since(l.into_iter(), 200),
+            vec!["{\"ts\":200}", "{\"ts\":300}"]
+        );
     }
     #[test]
     fn validate_rejects_partial() {
@@ -446,32 +576,71 @@ mod tests {
         let f = route("/v1/chat/codex");
         let t = format!("{A}/latest/codex.txt");
         assert_eq!(chat_command(&f, None), format!("tail -n 500 {t}"));
-        assert_eq!(chat_command(&f, Some("lines=60000")), format!("tail -n 50000 {t}"));
+        assert_eq!(
+            chat_command(&f, Some("lines=60000")),
+            format!("tail -n 50000 {t}")
+        );
         assert_eq!(chat_command(&f, Some("lines=7")), format!("tail -n 7 {t}"));
         assert_eq!(chat_command(&f, Some("all=1")), format!("cat {t}"));
-        assert_eq!(chat_command(&f, Some("all=1;id")), format!("tail -n 500 {t}"));
+        assert_eq!(
+            chat_command(&f, Some("all=1;id")),
+            format!("tail -n 500 {t}")
+        );
     }
     #[test]
     fn chat_commands_jsonl() {
         let f = route("/v1/chat/opencode.jsonl");
-        assert_eq!(chat_command(&f, None), format!("tail -n 500 {A}/latest/opencode.jsonl"));
-        assert_eq!(chat_command(&f, Some("lines=7&all=1")), format!("cat {A}/records/opencode/*.jsonl"));
-        assert_eq!(chat_command(&f, Some("all=1")), format!("cat {A}/records/opencode/*.jsonl"));
+        assert_eq!(
+            chat_command(&f, None),
+            format!("tail -n 500 {A}/latest/opencode.jsonl")
+        );
+        assert_eq!(
+            chat_command(&f, Some("lines=7&all=1")),
+            format!("cat {A}/records/opencode/*.jsonl")
+        );
+        assert_eq!(
+            chat_command(&f, Some("all=1")),
+            format!("cat {A}/records/opencode/*.jsonl")
+        );
     }
     #[test]
     fn chat_allow_list() {
         for a in ["claude", "codex", "opencode", "gemini", "muse"] {
-            assert_eq!(route(&format!("/v1/chat/{a}")).ctype, "text/plain; charset=utf-8");
-            assert_eq!(route(&format!("/v1/chat/{a}.jsonl")).ctype, "application/x-ndjson");
-            assert_eq!(route(&format!("/v1/chat/{a}")).latest, format!("{A}/latest/{a}.txt"));
+            assert_eq!(
+                route(&format!("/v1/chat/{a}")).ctype,
+                "text/plain; charset=utf-8"
+            );
+            assert_eq!(
+                route(&format!("/v1/chat/{a}.jsonl")).ctype,
+                "application/x-ndjson"
+            );
+            assert_eq!(
+                route(&format!("/v1/chat/{a}")).latest,
+                format!("{A}/latest/{a}.txt")
+            );
         }
-        for bad in ["/v1/chat/other", "/v1/chat/claude.txt", "/v1/chat/", "/v1/chat/claude/", "/v1/chat/Claude",
-                    "/v1/chat/../claude", "/v1/chat/claude.jsonl.jsonl", "/v1/chat/.jsonl", "/v1/chat/claude;id"] {
+        for bad in [
+            "/v1/chat/other",
+            "/v1/chat/claude.txt",
+            "/v1/chat/",
+            "/v1/chat/claude/",
+            "/v1/chat/Claude",
+            "/v1/chat/../claude",
+            "/v1/chat/claude.jsonl.jsonl",
+            "/v1/chat/.jsonl",
+            "/v1/chat/claude;id",
+        ] {
             assert_eq!(chat_route(bad), None, "{bad}");
         }
         let tok = "s3cret";
-        assert_eq!(handle(&Method::Get, "/v1/chat/other", Some("Bearer s3cret"), tok).0, 404);
-        assert_eq!(handle(&Method::Get, "/v1/chat/claude.txt", None, tok).0, 404);
+        assert_eq!(
+            handle(&Method::Get, "/v1/chat/other", Some("Bearer s3cret"), tok).0,
+            404
+        );
+        assert_eq!(
+            handle(&Method::Get, "/v1/chat/claude.txt", None, tok).0,
+            404
+        );
     }
     #[test]
     fn chat_auth_and_method() {
@@ -483,7 +652,17 @@ mod tests {
         }
         for p in &paths {
             assert_eq!(handle(&Method::Get, p, None, tok).0, 401, "{p}");
-            assert_eq!(handle(&Method::Get, &format!("{p}?lines=5"), Some("Bearer wrong"), tok).0, 401, "{p}");
+            assert_eq!(
+                handle(
+                    &Method::Get,
+                    &format!("{p}?lines=5"),
+                    Some("Bearer wrong"),
+                    tok
+                )
+                .0,
+                401,
+                "{p}"
+            );
             assert_eq!(handle(&Method::Post, p, None, tok).0, 405, "{p}");
         }
     }
@@ -491,13 +670,22 @@ mod tests {
     fn chat_agent_list() {
         let (code, body, ctype) = handle(&Method::Get, "/v1/chat", Some("Bearer s3cret"), "s3cret");
         assert_eq!((code, ctype), (200, "application/json"));
-        assert_eq!(body, r#"{"agents":["claude","codex","opencode","gemini","muse"]}"#);
+        assert_eq!(
+            body,
+            r#"{"agents":["claude","codex","opencode","gemini","muse"]}"#
+        );
         let v: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["agents"].as_array().unwrap().len(), AGENTS.len());
     }
     #[test]
     fn feed_defaults() {
-        assert_eq!(feed_body("/nonexistent/x", validate_status, STATUS_DEFAULT), STATUS_DEFAULT);
-        assert_eq!(feed_body("/nonexistent/x", validate_results, RESULTS_DEFAULT), RESULTS_DEFAULT);
+        assert_eq!(
+            feed_body("/nonexistent/x", validate_status, STATUS_DEFAULT),
+            STATUS_DEFAULT
+        );
+        assert_eq!(
+            feed_body("/nonexistent/x", validate_results, RESULTS_DEFAULT),
+            RESULTS_DEFAULT
+        );
     }
 }
