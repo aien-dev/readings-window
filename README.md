@@ -20,7 +20,7 @@ A small Rust service. `collect` fetches one JSON line of readings from the Spark
 - `readings-window collect`: fetch one reading from the Spark, append it to the history file and drop entries older than 30 days. It also refreshes the cached copies of the Spark's status and results files that `/v1/status` and `/v1/results` serve.
 - `readings-window serve`: HTTPS server on port 9443.
 
-`scripts/` holds the exposure watch: a 15-minute timer that scans our own public IP from inside the LAN (the router hairpin view, which is not the same as the internet view) and flags any change against an accepted baseline in `/etc/exposure-watch/baseline.json`. It also flags UPnP being on and the `hs` and `readings` DNS records not matching the public IP.
+`scripts/` holds the exposure watch: a 15-minute timer that scans my own public IP from inside the LAN (the router hairpin view, which is not the same as the internet view) and flags any change against an accepted baseline in `/etc/exposure-watch/baseline.json`. It also flags UPnP being on and the `hs` and `readings` DNS records not matching the public IP.
 Operational notes, unit names and the deployment layout are in `NOTES.md`.
 
 Build: `cargo build --release`. No Python. License: AGPL-3.0-or-later (see LICENSE).
