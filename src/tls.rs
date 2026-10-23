@@ -13,6 +13,47 @@ const MAX_CONNS: usize = 64;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const HEAD_DEADLINE: Duration = Duration::from_secs(15);
 
+// Enforce the total header budget at TCP I/O boundaries, including reads inside
+// rustls' handshake/record loop. A timer outside StreamOwned::read cannot do that.
+struct HeadBudgetIo {
+    tcp: TcpStream,
+    deadline: Option<Instant>,
+}
+impl HeadBudgetIo {
+    fn timeout(&self) -> std::io::Result<Duration> {
+        match self.deadline {
+            None => Ok(IO_TIMEOUT),
+            Some(deadline) => {
+                let left = deadline
+                    .checked_duration_since(Instant::now())
+                    .filter(|left| !left.is_zero())
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "TLS/header deadline elapsed",
+                        )
+                    })?;
+                Ok(IO_TIMEOUT.min(left))
+            }
+        }
+    }
+}
+impl Read for HeadBudgetIo {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.tcp.set_read_timeout(Some(self.timeout()?))?;
+        self.tcp.read(buf)
+    }
+}
+impl Write for HeadBudgetIo {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.tcp.set_write_timeout(Some(self.timeout()?))?;
+        self.tcp.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.tcp.flush()
+    }
+}
+
 /// TLS 1.2 and 1.3 only (rustls does not implement older versions), no client certificates.
 pub fn tls_config(cert_pem: &[u8], key_pem: &[u8]) -> Result<Arc<ServerConfig>, String> {
     let certs = CertificateDer::pem_slice_iter(cert_pem)
@@ -95,15 +136,19 @@ fn read_head<S: Read>(s: &mut S) -> Option<Vec<u8>> {
 }
 
 fn serve_conn(tcp: TcpStream, cfg: Arc<ServerConfig>, token: &str, history: &str) {
-    let _ = tcp.set_read_timeout(Some(IO_TIMEOUT));
-    let _ = tcp.set_write_timeout(Some(IO_TIMEOUT));
     let Ok(conn) = ServerConnection::new(cfg) else {
         return;
     };
-    let mut tls = StreamOwned::new(conn, tcp);
+    let io = HeadBudgetIo {
+        tcp,
+        deadline: Some(Instant::now() + HEAD_DEADLINE),
+    };
+    let mut tls = StreamOwned::new(conn, io);
     let Some(head) = read_head(&mut tls) else {
         return;
     };
+    // The request head is complete; normal response I/O retains its per-call timeout.
+    tls.sock.deadline = None;
     let out = match parse_head(&head) {
         Some((m, t, a)) => {
             let (code, body, ctype) = crate::handle(&m, &t, a.as_deref(), token, history);
@@ -362,6 +407,41 @@ mod tests {
         body.extend_from_slice(b"\r\n");
         body.resize(MAX_HEAD * 2, b'x');
         assert_eq!(read_head(&mut Cursor::new(body)).unwrap(), expected);
+    }
+
+    #[test]
+    fn fragmented_tls_cannot_keep_the_header_deadline_alive() {
+        let (addr, _) = start();
+        let mut reader = TcpStream::connect(addr).unwrap();
+        reader
+            .set_read_timeout(Some(HEAD_DEADLINE + Duration::from_secs(4)))
+            .unwrap();
+        // An incomplete TLS record never yields plaintext to read_head. Keep TCP active
+        // more often than IO_TIMEOUT, without completing the record or handshake.
+        reader.write_all(&[0x16, 0x03, 0x01, 0x00, 0x40]).unwrap();
+        let mut writer = reader.try_clone().unwrap();
+        writer
+            .set_write_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let active = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let keep = active.clone();
+        let sender = std::thread::spawn(move || {
+            while keep.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_secs(1));
+                if !keep.load(Ordering::SeqCst) || writer.write_all(&[0]).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut buf = [0u8; 64];
+        let result = reader.read(&mut buf);
+        active.store(false, Ordering::SeqCst);
+        sender.join().unwrap();
+        assert!(
+            legacy_refused(&result, &buf),
+            "TCP activity must not bypass the total TLS/header deadline: {result:?}"
+        );
+        println!("fragmented TLS record: header deadline closed connection despite periodic TCP bytes: {result:?}");
     }
 
     #[test]
