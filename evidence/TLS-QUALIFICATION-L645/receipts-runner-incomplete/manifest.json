@@ -1,0 +1,165 @@
+{
+  "source": "424905658d15b5539bca4d261e7320018fb574b8",
+  "original_pr9": "3197d3b2851a60008302b5b5c9c0d82e8ae93cbb",
+  "baseline_main": "33cbf275b22f15fbcf420fceb58496c24e99e8ac",
+  "scope": "Real loopback TLS/HTTP and actual temporary-file I/O with explicitly synthetic reading; no hardware measurement, production data, deployment or service restart",
+  "results": [
+    {
+      "name": "rustc",
+      "command": [
+        "rustc",
+        "--version"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "rustc.log.gz",
+      "raw_sha256": "4ad84f16acc2f3bdcfbc7b0788f1e74a4e649b962154a585b8f8d0b28eb0dd06"
+    },
+    {
+      "name": "cargo",
+      "command": [
+        "cargo",
+        "--version"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "cargo.log.gz",
+      "raw_sha256": "1aedaa9cce116919d39b1eb303a58865771582bc24fc259aa8e26cb212e0f59e"
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "fmt.log.gz",
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "tests.log.gz",
+      "raw_sha256": "c2b328212a4b36ee645369afcb82212afb8d86720d09771370fbb8b2492a97b1"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "clippy.log.gz",
+      "raw_sha256": "8c233a54790c4800d3dd585436af679aa838da259bfdb129412e2d51cdb75cdc"
+    },
+    {
+      "name": "release",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "release.log.gz",
+      "raw_sha256": "d4e7165d78fc79c4feeb2fc1cd99dd35aa83749cb0b9a05a032728a260b5a166"
+    },
+    {
+      "name": "dependency-tree",
+      "command": [
+        "cargo",
+        "tree",
+        "--locked",
+        "-i",
+        "rustls"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "dependency-tree.log.gz",
+      "raw_sha256": "8fd032cbaa89b1d62d60b6d141882182ab08db0eee68f4c61aa244f8dbb5a1e4"
+    },
+    {
+      "name": "lock-floor-red",
+      "command": [
+        "/opt/homebrew/opt/python@3.12/bin/python3.12",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/evidence/TLS-QUALIFICATION-L645/check-lock.py",
+        "/Users/drakestapleton/.hermes/cache/scratch/L645-floor-3qunr27q/before.lock"
+      ],
+      "exit": 1,
+      "expected_exit": 1,
+      "raw": "lock-floor-red.log.gz",
+      "raw_sha256": "17813e002e0d25dcee27b4c1195216bd8cc6ebdd305c38707bde6e1c36f9d725"
+    },
+    {
+      "name": "lock-floor-green",
+      "command": [
+        "/opt/homebrew/opt/python@3.12/bin/python3.12",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/evidence/TLS-QUALIFICATION-L645/check-lock.py",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/Cargo.lock"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "lock-floor-green.log.gz",
+      "raw_sha256": "872c9c022e99d91a1d419ea95f339acfe5305c8b8e3c8bb48157a9ec66c032e3"
+    },
+    {
+      "name": "audit-version",
+      "command": [
+        "/Users/drakestapleton/.hermes/cache/scratch/readings7-audit-tools/bin/cargo-audit",
+        "audit",
+        "--version"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "audit-version.log.gz",
+      "raw_sha256": "db7ec1f5601bae24da672cbd457db9538250e50b4d2f9b5ae8135fb852ef5e20"
+    },
+    {
+      "name": "audit",
+      "command": [
+        "/Users/drakestapleton/.hermes/cache/scratch/readings7-audit-tools/bin/cargo-audit",
+        "audit",
+        "--db",
+        "/Users/drakestapleton/.hermes/cache/scratch/readings7-advisory-db",
+        "--no-fetch",
+        "--file",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/Cargo.lock",
+        "--json"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "raw": "audit.log.gz",
+      "raw_sha256": "0ca0daa255a12b112145bc8962f4528cb6e4816927e6eebca280beec3fb00ca3"
+    }
+  ],
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+  "test_counts": {
+    "passed": 20,
+    "failed": 0
+  },
+  "rustls_versions": [
+    "0.23.46"
+  ],
+  "advisory_db_git_sha": "640bf5a9f06e66d8721e8772766531fe77c8630d",
+  "audit_version": "cargo-audit-audit 0.22.2"
+}

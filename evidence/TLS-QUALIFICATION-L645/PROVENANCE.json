@@ -1,0 +1,93 @@
+{
+  "final_source": "ed539838e0881b57aef1e48251d291bf3f1e227f",
+  "baseline_raw_logs": {
+    "baseline.log": {
+      "bytes": 1867,
+      "raw_sha256": "4c73b4910cc861e198803aee378febc8c0f3968f74fc23d977d42537beaa44fe"
+    },
+    "clippy.log": {
+      "bytes": 900,
+      "raw_sha256": "516fcc637dc5b285c48e7468494d7cc02c6c48a20a1a59986e80091dbd73c5af"
+    },
+    "fmt.log": {
+      "bytes": 19539,
+      "raw_sha256": "a1189724204c70c475fbcb3f67515e170e7629f4e7c4212af4dbb1aac24a4984"
+    },
+    "reading-red.log": {
+      "bytes": 958,
+      "raw_sha256": "0b474a1bb3c03a342ee89495f23ca85c88f3ced8dffbffb1ee72c9cb04247582"
+    },
+    "reading-green.log": {
+      "bytes": 1295,
+      "raw_sha256": "6566e4de13accc91dcb49e3163a329343dfed5a2103153b4bab1bf1f54cb2ed6"
+    },
+    "refactor-green.log": {
+      "bytes": 1143,
+      "raw_sha256": "4be593833e63910b424b169cf698f9f39cfe3ee5381780319bf0b3b72527bea3"
+    },
+    "controls-red.log": {
+      "bytes": 1517,
+      "raw_sha256": "5bee9577975fa5e03d38ab1fab4d10e53e5caa62b6b4fe13e2070b57e354de12"
+    },
+    "controls-green.log": {
+      "bytes": 1533,
+      "raw_sha256": "7d9fa253f0333760c61d159e3db8c294b8f41941b8c9e00d589bfb77b77b534d"
+    },
+    "formatted-green.log": {
+      "bytes": 1283,
+      "raw_sha256": "b14e5547cd3868f15867a25653e6205c18effceaf12d823767b9b86f124618ef"
+    },
+    "lock-red.log": {
+      "bytes": 127,
+      "raw_sha256": "17813e002e0d25dcee27b4c1195216bd8cc6ebdd305c38707bde6e1c36f9d725"
+    },
+    "lock-green.log": {
+      "bytes": 111,
+      "raw_sha256": "872c9c022e99d91a1d419ea95f339acfe5305c8b8e3c8bb48157a9ec66c032e3"
+    },
+    "audit.json": {
+      "bytes": 1924,
+      "raw_sha256": "b6347391b5024e58a49d2ac29e7399a3ef72eaf2112ca373c37fbe8e49134e2c"
+    },
+    "audit.stderr": {
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "audit-green.json": {
+      "bytes": 313,
+      "raw_sha256": "1bafe0181b08c0bb14d61c7ed2b9f2a20042b6ba3bf59a9561200ede282d579f"
+    },
+    "audit-green.stderr": {
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "audit-install.log": {
+      "bytes": 16714,
+      "raw_sha256": "8fabb73ed195ed25f7e8e4ea7c569a6719ee779251e01d3c4e1e38adcb7c0426"
+    },
+    "webpki-green.log": {
+      "bytes": 1660,
+      "raw_sha256": "3289048455bbd56fd576e691c127680567cc9c7ac2fb211993e3c40fd861a02c"
+    },
+    "deadline-red.log": {
+      "bytes": 948,
+      "raw_sha256": "099efe6d41d7fd60cfd39b3fdd34a2f2d9f90020f68ab8ce880af3a901e6befb"
+    },
+    "deadline-green.log": {
+      "bytes": 1702,
+      "raw_sha256": "6a7227280052d3003f9e177bdadbce99d655e45aa6fcfd27cca862da6f7f4d12"
+    }
+  },
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "python": "3.12.11",
+  "audit_binary_sha256": "9fcd9c01832e8ed903ce128112d8636985dd966c654b539f3f3170493c4cb429",
+  "review": "L647 pending actual findings; no source approval, merge or deployment",
+  "mac_production_files_exist": {
+    "/var/lib/readings-window/history.jsonl": false,
+    "/var/lib/readings-window/status.json": false,
+    "/etc/readings-window/token": false,
+    "/etc/readings-window/fullchain.pem": false,
+    "/etc/readings-window/key.pem": false
+  }
+}

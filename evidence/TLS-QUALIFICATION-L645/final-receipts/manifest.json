@@ -1,0 +1,289 @@
+{
+  "source": "ed539838e0881b57aef1e48251d291bf3f1e227f",
+  "original_pr9": "3197d3b2851a60008302b5b5c9c0d82e8ae93cbb",
+  "baseline_main": "33cbf275b22f15fbcf420fceb58496c24e99e8ac",
+  "scope": "Real loopback TLS/HTTP and actual temporary-file I/O with explicitly synthetic reading; no hardware measurement, production data, deployment or service restart",
+  "results": [
+    {
+      "name": "rustc",
+      "command": [
+        "rustc",
+        "--version"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "rustc.stdout.gz",
+          "sha256": "4ad84f16acc2f3bdcfbc7b0788f1e74a4e649b962154a585b8f8d0b28eb0dd06"
+        },
+        "stderr": {
+          "file": "rustc.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "name": "cargo",
+      "command": [
+        "cargo",
+        "--version"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "cargo.stdout.gz",
+          "sha256": "1aedaa9cce116919d39b1eb303a58865771582bc24fc259aa8e26cb212e0f59e"
+        },
+        "stderr": {
+          "file": "cargo.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "fmt.stdout.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "fmt.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "name": "tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "tests.stdout.gz",
+          "sha256": "81ca71539cb52f79a491de77c1f387f01e5b5bde51b68d82e13e8403d276e102"
+        },
+        "stderr": {
+          "file": "tests.stderr.gz",
+          "sha256": "65b2293679fd207a7d976e2899d630491f1dc722845e2c7d38beebb426a73a4b"
+        }
+      }
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "clippy.stdout.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "clippy.stderr.gz",
+          "sha256": "f0788aa36d1c86b6ccdfb7f4042a5574102d82061c046422a2d42e008a1e4710"
+        }
+      }
+    },
+    {
+      "name": "release",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "release.stdout.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "release.stderr.gz",
+          "sha256": "867220955ff4852b889c91d048e74c599ea3d79ca843ab36c9f812efaab22ed5"
+        }
+      }
+    },
+    {
+      "name": "dependency-tree",
+      "command": [
+        "cargo",
+        "tree",
+        "--locked",
+        "-i",
+        "rustls"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "dependency-tree.stdout.gz",
+          "sha256": "8fd032cbaa89b1d62d60b6d141882182ab08db0eee68f4c61aa244f8dbb5a1e4"
+        },
+        "stderr": {
+          "file": "dependency-tree.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "name": "lock-floor-red",
+      "command": [
+        "/opt/homebrew/opt/python@3.12/bin/python3.12",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/evidence/TLS-QUALIFICATION-L645/check-lock.py",
+        "/Users/drakestapleton/.hermes/cache/scratch/L645-floor-14o5vp_y/before.lock"
+      ],
+      "exit": 1,
+      "expected_exit": 1,
+      "streams": {
+        "stdout": {
+          "file": "lock-floor-red.stdout.gz",
+          "sha256": "17813e002e0d25dcee27b4c1195216bd8cc6ebdd305c38707bde6e1c36f9d725"
+        },
+        "stderr": {
+          "file": "lock-floor-red.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "name": "lock-floor-green",
+      "command": [
+        "/opt/homebrew/opt/python@3.12/bin/python3.12",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/evidence/TLS-QUALIFICATION-L645/check-lock.py",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/Cargo.lock"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "lock-floor-green.stdout.gz",
+          "sha256": "872c9c022e99d91a1d419ea95f339acfe5305c8b8e3c8bb48157a9ec66c032e3"
+        },
+        "stderr": {
+          "file": "lock-floor-green.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "name": "audit-registry-bootstrap",
+      "command": [
+        "cargo",
+        "fetch",
+        "--locked",
+        "--manifest-path",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/Cargo.toml"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "audit-registry-bootstrap.stdout.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "audit-registry-bootstrap.stderr.gz",
+          "sha256": "14f554207c99355f3405a3df6f188e0ee9bcfd53d0195de3be718afd7a4e8723"
+        }
+      }
+    },
+    {
+      "name": "audit-version",
+      "command": [
+        "/Users/drakestapleton/.hermes/cache/scratch/readings7-audit-tools/bin/cargo-audit",
+        "audit",
+        "--version"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "audit-version.stdout.gz",
+          "sha256": "db7ec1f5601bae24da672cbd457db9538250e50b4d2f9b5ae8135fb852ef5e20"
+        },
+        "stderr": {
+          "file": "audit-version.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "name": "audit",
+      "command": [
+        "/Users/drakestapleton/.hermes/cache/scratch/readings7-audit-tools/bin/cargo-audit",
+        "audit",
+        "--db",
+        "/Users/drakestapleton/.hermes/cache/scratch/readings7-advisory-db",
+        "--no-fetch",
+        "--file",
+        "/Users/drakestapleton/.hermes/cache/scratch/loop6-readings-tls7/Cargo.lock",
+        "--json"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "streams": {
+        "stdout": {
+          "file": "audit.stdout.gz",
+          "sha256": "1bafe0181b08c0bb14d61c7ed2b9f2a20042b6ba3bf59a9561200ede282d579f"
+        },
+        "stderr": {
+          "file": "audit.stderr.gz",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  ],
+  "complete": true,
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+  "test_counts": {
+    "passed": 21,
+    "failed": 0
+  },
+  "rustls_versions": [
+    "0.23.46"
+  ],
+  "advisory_db_git_sha": "640bf5a9f06e66d8721e8772766531fe77c8630d",
+  "audit_version": "cargo-audit-audit 0.22.2",
+  "production_paths_unchanged": {
+    "HISTORY": "/var/lib/readings-window/history.jsonl",
+    "TOKEN": "/etc/readings-window/token",
+    "CERT": "/etc/readings-window/fullchain.pem",
+    "KEY": "/etc/readings-window/key.pem"
+  },
+  "files": {
+    "Cargo.toml": "c95eac43d642c0838ce7ac5b07b6667996b9952487a66039b08cab479f44a135",
+    "Cargo.lock": "206c4b2231a2aca6b546628c41309238538d74323fc365883c40d2370fc3fa99",
+    "src/main.rs": "93e399d1dc2c7234547a85654d832fcde3b69e00787ffc179b3cca6458d8c8f4",
+    "src/tls.rs": "93604da351d19674c2673062397f3bcbc0ccebdaed956dda364de6d71ba91519",
+    "target/release/readings-window": "3ccbe01ae4e63530d3f7229d66f8fa850561aea1b373427332a67a939348dbac"
+  }
+}
