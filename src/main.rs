@@ -183,8 +183,8 @@ fn collect() -> Result<(), String> {
     fs::rename(&tmp, HISTORY).map_err(|e| e.to_string())
 }
 
-fn last_line() -> Option<String> {
-    fs::read_to_string(HISTORY).ok()?.lines().rev().find(|l| ts_of(l).is_some()).map(String::from)
+fn last_line(history: &str) -> Option<String> {
+    fs::read_to_string(history).ok()?.lines().rev().find(|l| ts_of(l).is_some()).map(String::from)
 }
 
 const CHAT_DEFAULT_LINES: u64 = 500;
@@ -270,7 +270,7 @@ fn chat_feed(feed: &ChatFeed, q: Option<&str>) -> (u16, String, &'static str) {
     }
 }
 
-fn handle(method: &str, url: &str, auth: Option<&str>, token: &str) -> (u16, String, &'static str) {
+fn handle(method: &str, url: &str, auth: Option<&str>, token: &str, history: &str) -> (u16, String, &'static str) {
     let (path, query) = match url.split_once('?') {
         Some((p, q)) => (p, Some(q)),
         None => (url, None),
@@ -285,7 +285,7 @@ fn handle(method: &str, url: &str, auth: Option<&str>, token: &str) -> (u16, Str
     }
     if path == "/health" {
         let ex = exposure_state(fs::read_to_string(EXPOSURE).ok().as_deref(), now());
-        let age = match last_line().and_then(|l| ts_of(&l)) {
+        let age = match last_line(history).and_then(|l| ts_of(&l)) {
             Some(t) => now().saturating_sub(t).to_string(),
             None => "null".into(),
         };
@@ -310,13 +310,13 @@ fn handle(method: &str, url: &str, auth: Option<&str>, token: &str) -> (u16, Str
         return chat_feed(feed, query);
     }
     if path == "/v1/readings/current" {
-        return match last_line() {
+        return match last_line(history) {
             Some(l) => (200, l, JSON_TYPE),
             None => (503, r#"{"error":"no readings yet"}"#.into(), JSON_TYPE),
         };
     }
     let cutoff = now().saturating_sub(clamp_hours(query) * 3600);
-    let all = fs::read_to_string(HISTORY).unwrap_or_default();
+    let all = fs::read_to_string(history).unwrap_or_default();
     let rows = filter_since(all.lines(), cutoff);
     (200, format!("[{}]", rows.join(",")), JSON_TYPE)
 }
@@ -352,6 +352,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Preserve the original default-path unit-test interface; the real handler is shared.
+    fn handle(method: &str, url: &str, auth: Option<&str>, token: &str) -> (u16,String,&'static str) {
+        super::handle(method,url,auth,token,HISTORY)
+    }
     #[test]
     fn exposure_parsing() {
         let n = 10_000;

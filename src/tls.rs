@@ -81,6 +81,9 @@ fn read_head<S: Read>(s: &mut S) -> Option<Vec<u8>> {
         }
         buf.extend_from_slice(&chunk[..n]);
         if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            if i + 4 > MAX_HEAD {
+                return None;
+            }
             buf.truncate(i + 2);
             return Some(buf);
         }
@@ -91,7 +94,7 @@ fn read_head<S: Read>(s: &mut S) -> Option<Vec<u8>> {
     None
 }
 
-fn serve_conn(tcp: TcpStream, cfg: Arc<ServerConfig>, token: &str) {
+fn serve_conn(tcp: TcpStream, cfg: Arc<ServerConfig>, token: &str, history: &str) {
     let _ = tcp.set_read_timeout(Some(IO_TIMEOUT));
     let _ = tcp.set_write_timeout(Some(IO_TIMEOUT));
     let Ok(conn) = ServerConnection::new(cfg) else {
@@ -103,7 +106,7 @@ fn serve_conn(tcp: TcpStream, cfg: Arc<ServerConfig>, token: &str) {
     };
     let out = match parse_head(&head) {
         Some((m, t, a)) => {
-            let (code, body, ctype) = crate::handle(&m, &t, a.as_deref(), token);
+            let (code, body, ctype) = crate::handle(&m, &t, a.as_deref(), token, history);
             response_bytes(code, ctype, &body)
         }
         None => response_bytes(400, crate::JSON_TYPE, r#"{"error":"bad request"}"#),
@@ -115,16 +118,22 @@ fn serve_conn(tcp: TcpStream, cfg: Arc<ServerConfig>, token: &str) {
 
 /// Accept loop: one thread per connection, at most MAX_CONNS at once.
 pub fn serve_on(listener: TcpListener, cfg: Arc<ServerConfig>, token: String) {
+    serve_on_with_history(listener,cfg,token,crate::HISTORY.to_string());
+}
+
+// Trusted immutable setup only: never derived from an HTTP request or environment.
+fn serve_on_with_history(listener: TcpListener, cfg: Arc<ServerConfig>, token: String, history: String) {
     let live = Arc::new(AtomicUsize::new(0));
     let token = Arc::new(token);
+    let history = Arc::new(history);
     for tcp in listener.incoming().flatten() {
         if live.fetch_add(1, Ordering::SeqCst) >= MAX_CONNS {
             live.fetch_sub(1, Ordering::SeqCst);
             continue; // dropped: shed load instead of queueing
         }
-        let (cfg, live, token) = (cfg.clone(), live.clone(), token.clone());
+        let (cfg, live, token, history) = (cfg.clone(), live.clone(), token.clone(), history.clone());
         std::thread::spawn(move || {
-            serve_conn(tcp, cfg, &token);
+            serve_conn(tcp, cfg, &token, &history);
             live.fetch_sub(1, Ordering::SeqCst);
         });
     }
@@ -138,6 +147,10 @@ mod tests {
     const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
     fn start() -> (std::net::SocketAddr, CertificateDer<'static>) {
+        start_at_history(crate::HISTORY.to_string())
+    }
+
+    fn start_at_history(history: String) -> (std::net::SocketAddr, CertificateDer<'static>) {
         let ck = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
         let cfg = tls_config(
             ck.cert.pem().as_bytes(),
@@ -146,7 +159,7 @@ mod tests {
         .unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
-        std::thread::spawn(move || serve_on(listener, cfg, TOKEN.to_string()));
+        std::thread::spawn(move || serve_on_with_history(listener, cfg, TOKEN.to_string(),history));
         (addr, ck.cert.der().clone())
     }
 
@@ -155,25 +168,66 @@ mod tests {
         cert: &CertificateDer<'static>,
         auth: Option<&str>,
     ) -> String {
+        get_path(addr,cert,auth,"/v1/status",&[&rustls::version::TLS13,&rustls::version::TLS12])
+    }
+
+    fn get_path(
+        addr: std::net::SocketAddr,
+        cert: &CertificateDer<'static>,
+        auth: Option<&str>,
+        path: &str,
+        versions: &[&'static rustls::SupportedProtocolVersion],
+    ) -> String {
         let mut roots = RootCertStore::empty();
         roots.add(cert.clone()).unwrap();
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let cfg = ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
+            .with_protocol_versions(versions)
             .unwrap()
             .with_root_certificates(roots)
             .with_no_client_auth();
         let conn = ClientConnection::new(Arc::new(cfg), ServerName::try_from("localhost").unwrap())
             .unwrap();
         let mut s = StreamOwned::new(conn, TcpStream::connect(addr).unwrap());
+        s.sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        s.sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let a = auth
             .map(|a| format!("Authorization: {a}\r\n"))
             .unwrap_or_default();
-        s.write_all(format!("GET /v1/status HTTP/1.1\r\nHost: localhost\r\n{a}\r\n").as_bytes())
+        s.write_all(format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n{a}\r\n").as_bytes())
             .unwrap();
         let mut out = String::new();
         let _ = s.read_to_string(&mut out); // server closes without close_notify on some paths
+        assert!(versions.iter().any(|v|Some(v.version)==s.conn.protocol_version()),"requested TLS version must actually negotiate");
         out
+    }
+
+    struct FixtureDir(std::path::PathBuf);
+    impl Drop for FixtureDir {
+        fn drop(&mut self) { let _=std::fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn reading_file_roundtrip_is_token_protected_under_tls12_and_tls13() {
+        let dir=std::env::temp_dir().join(format!("readings-tls-fixture-{}",std::process::id()));
+        std::fs::create_dir(&dir).unwrap();let fixture_dir=FixtureDir(dir);
+        let fixture=serde_json::json!({"ts":1,"gpu_util_pct":0,"gpu_temp_c":0,"gpu_power_w":0,"load1":0,"load5":0,"load15":0,"cpu_temp_c":0,"mem_used_mb":0,"mem_total_mb":0,"fixture":"synthetic-not-hardware"});
+        let line=fixture.to_string();crate::validate(&line).unwrap();
+        let path=fixture_dir.0.join("history.jsonl");std::fs::write(&path,format!("{line}\n")).unwrap();
+        let (addr,cert)=start_at_history(path.to_str().unwrap().to_string());
+        for version in [&rustls::version::TLS12,&rustls::version::TLS13] {
+            let response=get_path(addr,&cert,Some(&format!("Bearer {TOKEN}")),"/v1/readings/current",&[version]);
+            let (headers,body)=response.split_once("\r\n\r\n").expect("complete HTTP response");
+            assert!(headers.starts_with("HTTP/1.1 200 OK"),"{response}");
+            assert_eq!(serde_json::from_str::<serde_json::Value>(body).unwrap(),fixture);
+            for auth in [None,Some("Bearer wrong")] {
+                let denied=get_path(addr,&cert,auth,"/v1/readings/current",&[version]);
+                assert!(denied.starts_with("HTTP/1.1 401"),"{denied}");
+                assert!(!denied.contains("synthetic-not-hardware"));
+            }
+            println!("{version:?}: real TLS reading200 exact synthetic fixture; absent/wrong token401");
+        }
+        assert_eq!(std::fs::read_to_string(path).unwrap(),format!("{line}\n"),"HTTPS reads must not modify the fixture");
     }
 
     #[test]
@@ -186,6 +240,14 @@ mod tests {
         assert!(no.starts_with("HTTP/1.1 401"), "{no}");
         let bad = get(addr, &cert, Some("Bearer wrong"));
         assert!(bad.starts_with("HTTP/1.1 401"), "{bad}");
+    }
+
+    fn legacy_refused(result: &std::io::Result<usize>, buf: &[u8]) -> bool {
+        match result {
+            Ok(0) => true,
+            Ok(_) => buf.first()==Some(&0x15),
+            Err(e) => matches!(e.kind(),std::io::ErrorKind::ConnectionReset|std::io::ErrorKind::ConnectionAborted),
+        }
     }
 
     #[test]
@@ -206,14 +268,37 @@ mod tests {
             s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
             s.write_all(&rec).unwrap();
             let mut buf = [0u8; 64];
-            let n = s.read(&mut buf).unwrap_or(0);
-            // Either closed, or a TLS alert (0x15). Never a ServerHello (0x16).
-            assert!(
-                n == 0 || buf[0] == 0x15,
-                "TLS 1.{minor} got {:?}",
-                &buf[..n.min(8)]
-            );
+            let result = s.read(&mut buf);
+            // An alert or a closed connection is refusal; retain the result for diagnostics.
+            let version_minor=minor-1;
+            assert!(legacy_refused(&result,&buf), "TLS 1.{version_minor} got {result:?}, bytes {:?}", &buf[..8]);
+            println!("TLS1.{version_minor}: actual legacy ClientHello refused: {result:?}");
         }
+    }
+
+    #[test]
+    fn legacy_refusal_never_treats_a_timeout_as_success() {
+        use std::io::{Error,ErrorKind};
+        for kind in [ErrorKind::TimedOut,ErrorKind::WouldBlock,ErrorKind::Other] {
+            assert!(!legacy_refused(&Err(Error::from(kind)),&[0u8;64]),"{kind:?} is not protocol refusal");
+        }
+        assert!(legacy_refused(&Ok(0),&[]));
+        assert!(legacy_refused(&Ok(1),&[0x15]));
+        assert!(!legacy_refused(&Ok(1),&[0x16]));
+    }
+
+    #[test]
+    fn request_head_bound_includes_the_terminator() {
+        use std::io::Cursor;
+        let mut at_limit=b"GET /health HTTP/1.1\r\nX-Pad: ".to_vec();
+        at_limit.resize(MAX_HEAD-4,b'a');at_limit.extend_from_slice(b"\r\n\r\n");
+        assert_eq!(at_limit.len(),MAX_HEAD);
+        assert!(read_head(&mut Cursor::new(at_limit.clone())).is_some());
+        let mut overflow=at_limit[..MAX_HEAD-4].to_vec();overflow.push(b'a');overflow.extend_from_slice(b"\r\n\r\n");
+        assert!(read_head(&mut Cursor::new(overflow)).is_none(),"terminator beyond MAX_HEAD must be refused");
+        let expected=b"GET /health HTTP/1.1\r\nHost: localhost\r\n";
+        let mut body=expected.to_vec();body.extend_from_slice(b"\r\n");body.resize(MAX_HEAD*2,b'x');
+        assert_eq!(read_head(&mut Cursor::new(body)).unwrap(),expected);
     }
 
     #[test]
