@@ -43,6 +43,7 @@ def main():
     manifest['test_counts']={'passed':int(match.group(1)),'failed':int(match.group(2))}
     assert 'TLSv1_2: real TLS reading200' in tests and 'TLSv1_3: real TLS reading200' in tests
     assert 'TLS1.0: actual legacy ClientHello refused:' in tests and 'TLS1.1: actual legacy ClientHello refused:' in tests
+    assert 'fragmented TLS record: header deadline closed connection despite periodic TCP bytes:' in tests
     run('clippy',['cargo','clippy','--locked','--all-targets','--','-D','warnings'],env=env)
     run('release',['cargo','build','--locked','--release'],env=env)
     run('dependency-tree',['cargo','tree','--locked','-i','rustls'],env=env)

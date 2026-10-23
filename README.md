@@ -35,7 +35,9 @@ and the real `/v1/readings/current` handler against an isolated temporary histor
 file. Its reading is explicitly synthetic, not measured hardware data. TLS 1.2
 and 1.3 negotiate; the valid test token gets the exact JSON, and absent/wrong
 credentials get 401. Legacy TLS alerts/closed connections are distinguished from
-timeouts. The private fixture path cannot be selected by a request or new CLI/env
+timeouts. The total header budget is enforced inside TLS transport I/O, so a peer
+cannot keep an incomplete TLS record alive with periodic TCP bytes. The private
+fixture path cannot be selected by a request or new CLI/env
 option; production token, certificate, key and history paths are unchanged.
 
 [Commands, dependency-floor checks and raw acceptance evidence](evidence/TLS-QUALIFICATION-L645/)
