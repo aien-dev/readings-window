@@ -6,8 +6,11 @@ license = "AGPL-3.0-or-later"
 description = "Read-only, token-protected HTTPS window onto the Spark's GPU/CPU readings"
 
 [dependencies]
-tiny_http = { version = "0.12", features = ["ssl-rustls"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
+
+[dev-dependencies]
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 
 [profile.release]
 opt-level = "s"
