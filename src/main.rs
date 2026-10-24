@@ -1,11 +1,11 @@
 //! readings-window: read-only HTTPS endpoint for Spark readings.
 //! `collect` appends one reading to the history file; `serve` publishes it.
 use serde_json::Value;
+mod tls;
 use std::fs;
 use std::io::Write;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tiny_http::{Header, Method, Response, Server, SslConfig};
 
 const HISTORY: &str = "/var/lib/readings-window/history.jsonl";
 const TOKEN: &str = "/etc/readings-window/token";
@@ -270,13 +270,7 @@ fn chat_feed(feed: &ChatFeed, q: Option<&str>) -> (u16, String, &'static str) {
     }
 }
 
-fn resp(code: u16, ctype: &str, body: String) -> Response<std::io::Cursor<Vec<u8>>> {
-    Response::from_string(body)
-        .with_status_code(code)
-        .with_header(Header::from_bytes("Content-Type", ctype).unwrap())
-}
-
-fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, String, &'static str) {
+fn handle(method: &str, url: &str, auth: Option<&str>, token: &str) -> (u16, String, &'static str) {
     let (path, query) = match url.split_once('?') {
         Some((p, q)) => (p, Some(q)),
         None => (url, None),
@@ -286,7 +280,7 @@ fn handle(method: &Method, url: &str, auth: Option<&str>, token: &str) -> (u16, 
     if !known {
         return (404, r#"{"error":"not found"}"#.into(), JSON_TYPE);
     }
-    if *method != Method::Get {
+    if method != "GET" {
         return (405, r#"{"error":"method not allowed"}"#.into(), JSON_TYPE);
     }
     if path == "/health" {
@@ -332,16 +326,9 @@ fn serve() -> Result<(), String> {
     if token.len() < 32 {
         return Err("token too short".into());
     }
-    let ssl = SslConfig {
-        certificate: fs::read(CERT).map_err(|e| format!("cert: {e}"))?,
-        private_key: fs::read(KEY).map_err(|e| format!("key: {e}"))?,
-    };
-    let server = Server::https("0.0.0.0:9443", ssl).map_err(|e| format!("bind: {e}"))?;
-    for req in server.incoming_requests() {
-        let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.to_string());
-        let (code, body, ctype) = handle(req.method(), req.url(), auth.as_deref(), &token);
-        let _ = req.respond(resp(code, ctype, body));
-    }
+    let cfg = tls::tls_config(&fs::read(CERT).map_err(|e| format!("cert: {e}"))?, &fs::read(KEY).map_err(|e| format!("key: {e}"))?)?;
+    let listener = std::net::TcpListener::bind("0.0.0.0:9443").map_err(|e| format!("bind: {e}"))?;
+    tls::serve_on(listener, cfg, token);
     Ok(())
 }
 
@@ -470,8 +457,8 @@ mod tests {
             assert_eq!(chat_route(bad), None, "{bad}");
         }
         let tok = "s3cret";
-        assert_eq!(handle(&Method::Get, "/v1/chat/other", Some("Bearer s3cret"), tok).0, 404);
-        assert_eq!(handle(&Method::Get, "/v1/chat/claude.txt", None, tok).0, 404);
+        assert_eq!(handle("GET", "/v1/chat/other", Some("Bearer s3cret"), tok).0, 404);
+        assert_eq!(handle("GET", "/v1/chat/claude.txt", None, tok).0, 404);
     }
     #[test]
     fn chat_auth_and_method() {
@@ -482,14 +469,14 @@ mod tests {
             paths.push(format!("/v1/chat/{a}.jsonl"));
         }
         for p in &paths {
-            assert_eq!(handle(&Method::Get, p, None, tok).0, 401, "{p}");
-            assert_eq!(handle(&Method::Get, &format!("{p}?lines=5"), Some("Bearer wrong"), tok).0, 401, "{p}");
-            assert_eq!(handle(&Method::Post, p, None, tok).0, 405, "{p}");
+            assert_eq!(handle("GET", p, None, tok).0, 401, "{p}");
+            assert_eq!(handle("GET", &format!("{p}?lines=5"), Some("Bearer wrong"), tok).0, 401, "{p}");
+            assert_eq!(handle("POST", p, None, tok).0, 405, "{p}");
         }
     }
     #[test]
     fn chat_agent_list() {
-        let (code, body, ctype) = handle(&Method::Get, "/v1/chat", Some("Bearer s3cret"), "s3cret");
+        let (code, body, ctype) = handle("GET", "/v1/chat", Some("Bearer s3cret"), "s3cret");
         assert_eq!((code, ctype), (200, "application/json"));
         assert_eq!(body, r#"{"agents":["claude","codex","opencode","gemini","muse"]}"#);
         let v: Value = serde_json::from_str(&body).unwrap();
