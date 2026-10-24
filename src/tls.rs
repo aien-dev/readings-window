@@ -81,6 +81,10 @@ fn read_head<S: Read>(s: &mut S) -> Option<Vec<u8>> {
         }
         buf.extend_from_slice(&chunk[..n]);
         if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            // Bound the complete wire head, not body bytes read in the same chunk.
+            if i + 4 > MAX_HEAD {
+                return None;
+            }
             buf.truncate(i + 2);
             return Some(buf);
         }
@@ -214,6 +218,45 @@ mod tests {
                 &buf[..n.min(8)]
             );
         }
+    }
+
+    #[test]
+    fn head_size_limit_includes_terminator() {
+        for size in [MAX_HEAD - 1, MAX_HEAD, MAX_HEAD + 1, MAX_HEAD + 2048] {
+            let mut head = b"GET /health HTTP/1.1\r\nX-Pad: ".to_vec();
+            head.resize(size - 4, b'a');
+            head.extend_from_slice(b"\r\n\r\n");
+            let result = read_head(&mut std::io::Cursor::new(&head));
+            if size <= MAX_HEAD {
+                assert_eq!(result.as_deref(), Some(&head[..size - 2]), "size {size}");
+            } else {
+                assert!(result.is_none(), "accepted oversized head: {size}");
+            }
+        }
+    }
+
+    #[test]
+    fn head_size_limit_ignores_trailing_body() {
+        struct Chunked<'a>(&'a [u8]);
+        impl Read for Chunked<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let limit = buf.len().min(1000);
+                self.0.read(&mut buf[..limit])
+            }
+        }
+        let mut input = b"GET /health HTTP/1.1\r\nX-Pad: ".to_vec();
+        input.resize(MAX_HEAD - 104, b'a');
+        input.extend_from_slice(b"\r\n\r\n");
+        let head_end = input.len();
+        input.extend_from_slice(&[b'b'; 4096]);
+        // The last read crosses MAX_HEAD, but the terminator precedes that limit.
+        let result = read_head(&mut Chunked(&input));
+        assert_eq!(result.as_deref(), Some(&input[..head_end - 2]));
+    }
+
+    #[test]
+    fn head_size_limit_rejects_unterminated_input() {
+        assert!(read_head(&mut std::io::Cursor::new(vec![b'a'; MAX_HEAD + 1])).is_none());
     }
 
     #[test]
