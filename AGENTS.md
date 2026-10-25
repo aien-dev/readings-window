@@ -24,11 +24,12 @@ Needs a stable Rust toolchain only. Dependencies are `rustls` (ring provider, TL
 ## Configuration
 
 Spark SSH targets come from `/etc/readings-window/spark.conf`; `spark.conf.example` documents the format. Each nonempty `target=USER@HOST` value is tried in file order. Keep real targets local-only, with the same order when migrating an existing deployment. There are no environment-variable or flag overrides.
+Optional `identity=PATH` selects an SSH identity on the hub for all targets; the first nonempty value wins. Omission delegates identity selection to the service user's OpenSSH configuration/defaults. Values are trimmed, with no shell expansion or quote removal. Preserve an existing deployment's identity explicitly before deploying this change; keep its real path local-only.
 
 - Pi-side files: token `/etc/readings-window/token`, certificate `/etc/readings-window/fullchain.pem`, key `/etc/readings-window/key.pem`; data under `/var/lib/readings-window/` (`history.jsonl`, `status.json`, `results.json`, `exposure.json`).
 - Listen address `0.0.0.0:9443` (`serve`).
 - The target file is read on each fetch, not at server startup. Missing or unreadable config makes Spark fetches fail; `/health` can still return successfully because it reads local history. See the migration procedure in `NOTES.md`.
-- Other settings remain constants in `src/main.rs`: the root SSH key path, home-relative Spark status/results and agent archive paths (`AGENTS`, five fixed names). The configured SSH user's home must contain those paths. Changing one of these is a deployment change; say so in the pull request.
+- Other settings remain constants in `src/main.rs`: home-relative Spark status/results and agent archive paths (`AGENTS`, five fixed names). The configured SSH user's home must contain those paths. Changing one of these is a deployment change; say so in the pull request.
 - Limits: history `?hours=` default 24, max 720 (`DEFAULT_HOURS`, `MAX_HOURS`); chat `?lines=` default 500, max 50000; HTTP head cap 16 KiB and at most 64 connections (`src/tls.rs`); history kept 30 days (`KEEP_SECS`).
 - The exposure watch reads its baseline from `/etc/exposure-watch/baseline.json` (created on first run) and writes `/var/lib/readings-window/exposure.json`, which `/v1/exposure` serves.
 

@@ -2,3 +2,7 @@
 # One ssh target per line, tried in order.
 target=USER@SPARK_LAN_ADDRESS
 target=USER@SPARK_PRIVATE_NET_ADDRESS
+# Optional identity path on the hub, shared by all targets. First nonempty value wins.
+# Omit to use the service user's OpenSSH configuration and default identities.
+# Values are trimmed, not shell-expanded or unquoted; spaces inside paths are literal.
+# identity=/etc/readings-window/ssh_identity
