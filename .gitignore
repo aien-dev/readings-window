@@ -1,2 +1,3 @@
 target/
 .crumb.local
+spark.conf

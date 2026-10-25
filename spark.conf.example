@@ -1,0 +1,4 @@
+# Copy to /etc/readings-window/spark.conf (root 600) on the hub. Never commit the real file.
+# One ssh target per line, tried in order.
+target=USER@SPARK_LAN_ADDRESS
+target=USER@SPARK_PRIVATE_NET_ADDRESS
