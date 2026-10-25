@@ -6,7 +6,7 @@ Read-only, token-protected HTTPS window onto the Spark's GPU/CPU readings, hoste
 - Spark: `/usr/local/bin/spark-readings` (bash, one JSON line, ~0.05 s).
 - Hub: `/usr/local/bin/readings-window` (this crate). Runs as root (needs the key and the root ssh key).
   - `readings-collect.timer` (every 15 s) runs `readings-window collect`: ssh to the Spark
-    (LAN 192.168.1.108 first, private net 100.64.0.2 as fallback; the private-net address timed out when tested),
+    (targets from `/etc/readings-window/spark.conf`, local-only, format in `spark.conf.example`: LAN first, private net as fallback),
     appends to `/var/lib/readings-window/history.jsonl`, prunes lines older than 30 days.
   - `readings-window.service` runs `readings-window serve` on 0.0.0.0:9443 (HTTPS).
 - Secrets: `/etc/readings-window/token` (root 600), `/etc/readings-window/key.pem`.
@@ -15,7 +15,7 @@ Read-only, token-protected HTTPS window onto the Spark's GPU/CPU readings, hoste
 - Registered in pi-register as `readings-window` and `readings-collect`.
 
 ## How Muse calls it
-- Needs router forward of 9443/tcp to 192.168.1.192 (Drake).
+- Needs router forward of 9443/tcp to the hub's LAN address (Drake).
 - `GET https://readings.aienos.com:9443/health` (no auth): `{"status":"ok","last_reading_age_s":N}`
 - `GET /v1/readings/current`, `GET /v1/readings/history?hours=N` (default 24, max 720), header `Authorization: Bearer <token>`.
 
@@ -40,13 +40,13 @@ TLS is terminated by rustls 0.23 (ring provider, TLS 1.2 and 1.3 only) in `src/t
 
 ## Live Claude chat feed (added 2026-10-04)
 - Why: Drake wants the whole Claude chat stream visible to Muse on his MacBook and phone.
-- `GET /v1/chat/claude` serves `/home/drakestapleton/shared/agents/claude-chat.txt`, `GET /v1/chat/claude.jsonl` serves `claude-chat.jsonl` (Bearer token). `?lines=N` (default 500, clamped 1..50000) runs `tail -n N` on the Spark; `?all=1` runs `cat`. Only constant paths and a parsed integer reach the remote shell.
+- `GET /v1/chat/claude` serves `~/shared/agents/claude-chat.txt`, `GET /v1/chat/claude.jsonl` serves `claude-chat.jsonl` (Bearer token). `?lines=N` (default 500, clamped 1..50000) runs `tail -n N` on the Spark; `?all=1` runs `cat`. Only constant paths and a parsed integer reach the remote shell.
 - Proxied live over ssh on each request. NOTHING is written or cached on the hub, because its root disk is a fragile USB stick. Spark unreachable gives 502 `{"error":"spark unreachable"}`.
 - Each request blocks the single-threaded server for the ssh round trip (up to ~5 s connect timeout per host); `?all=1` on a large file is a big response. UNVERIFIED under load.
 
 ## Per-agent chat routes (added 2026-10-04, replaces the Claude-only feed above)
 - Why: Drake 2026-10-04 wants every agent's chat visible to Muse from one archive. Design: `~/handoffs/2026-10-04-agent-archive.md` (program `agent-archive`).
 - Allow-list, matched exactly, each name mapped to constant paths in code (the name is never put into a command): `claude`, `codex`, `opencode`, `gemini`, `muse`. `GET /v1/chat` lists them.
-- Spark files: `/home/drakestapleton/archive/agent-chats/latest/<agent>.txt|.jsonl` (rolling, last 20000 lines) and `records/<agent>/<YYYY-MM-DD>.jsonl` (complete history).
+- Spark files: `~/archive/agent-chats/latest/<agent>.txt|.jsonl` (rolling, last 20000 lines) and `records/<agent>/<YYYY-MM-DD>.jsonl` (complete history).
 - `?lines=N` runs `tail -n N` on the latest file. `?all=1`: plain runs `cat latest/<agent>.txt`; jsonl runs `cat records/<agent>/*.jsonl` (shell glob on the Spark, date order because file names sort by date). A missing file or an empty records folder makes the remote command fail, which shows as 502 "spark unreachable" (same code path as a real outage).
 - After the archive cutover `~/shared/agents/claude-chat.*` become symlinks to `latest/claude.*`; the hub no longer reads those paths. The hub must run this build and the archive must exist before `/v1/chat/*` returns data. Not deployed by this change.

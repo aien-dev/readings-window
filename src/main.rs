@@ -73,15 +73,27 @@ fn validate(line: &str) -> Result<Value, String> {
     Ok(v)
 }
 
-/// Spark addresses: LAN first (works today), private-net address as fallback.
-const SPARK_HOSTS: [&str; 2] = ["192.168.1.108", "100.64.0.2"];
+/// Spark ssh targets (`user@host`, tried in order), one per `target=` line in SPARK_CONF.
+/// The real file is local-only; see `spark.conf.example`.
+const SPARK_CONF: &str = "/etc/readings-window/spark.conf";
 
+fn spark_targets(conf: &str) -> Vec<String> {
+    conf.lines()
+        .filter_map(|l| l.trim().strip_prefix("target="))
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// Remote paths are relative: ssh runs the command in the Spark user's home directory.
 fn fetch(remote: &str) -> Result<std::process::Output, String> {
+    let conf = fs::read_to_string(SPARK_CONF).map_err(|e| format!("{SPARK_CONF}: {e}"))?;
     let mut last = String::from("no hosts");
-    for host in SPARK_HOSTS {
+    for target in spark_targets(&conf) {
+        let host = &target;
         let r = Command::new("ssh")
             .args(["-i", "/root/.ssh/id_ed25519_headscale_backup", "-o", "BatchMode=yes",
-                   "-o", "ConnectTimeout=5", &format!("drakestapleton@{host}"), remote])
+                   "-o", "ConnectTimeout=5", target.as_str(), remote])
             .output();
         match r {
             Ok(o) if o.status.success() => return Ok(o),
@@ -205,9 +217,9 @@ macro_rules! agent {
     ($n:literal) => {
         Agent {
             name: $n,
-            latest_txt: concat!("/home/drakestapleton/archive/agent-chats/latest/", $n, ".txt"),
-            latest_jsonl: concat!("/home/drakestapleton/archive/agent-chats/latest/", $n, ".jsonl"),
-            records_glob: concat!("/home/drakestapleton/archive/agent-chats/records/", $n, "/*.jsonl"),
+            latest_txt: concat!("archive/agent-chats/latest/", $n, ".txt"),
+            latest_jsonl: concat!("archive/agent-chats/latest/", $n, ".jsonl"),
+            records_glob: concat!("archive/agent-chats/records/", $n, "/*.jsonl"),
         }
     };
 }
@@ -336,8 +348,8 @@ fn main() {
     let r = match std::env::args().nth(1).as_deref() {
         Some("collect") => {
             let r = collect();
-            collect_feed("/home/drakestapleton/status/current.json", STATUS, validate_status);
-            collect_feed("/home/drakestapleton/status/results.json", RESULTS, validate_results);
+            collect_feed("status/current.json", STATUS, validate_status);
+            collect_feed("status/results.json", RESULTS, validate_results);
             r
         }
         Some("serve") => serve(),
@@ -424,7 +436,12 @@ mod tests {
         assert_eq!(clamp_lines(Some("lines=1;rm -rf /")), 500);
         assert_eq!(clamp_lines(Some("lines=-5")), 500);
     }
-    const A: &str = "/home/drakestapleton/archive/agent-chats";
+    const A: &str = "archive/agent-chats";
+    #[test]
+    fn spark_targets_parse() {
+        let c = "# comment\ntarget=u@a\n target= u@b \ntarget=\nother=x\n";
+        assert_eq!(spark_targets(c), vec!["u@a".to_string(), "u@b".to_string()]);
+    }
     fn route(p: &str) -> ChatFeed {
         chat_route(p).unwrap()
     }
