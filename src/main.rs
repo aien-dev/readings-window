@@ -85,16 +85,31 @@ fn spark_targets(conf: &str) -> Vec<String> {
         .collect()
 }
 
+/// First nonempty identity wins; omission leaves identity selection to OpenSSH.
+fn spark_identity(conf: &str) -> Option<&str> {
+    conf.lines()
+        .filter_map(|l| l.trim().strip_prefix("identity="))
+        .map(str::trim)
+        .find(|identity| !identity.is_empty())
+}
+
+fn spark_ssh(target: &str, remote: &str, identity: Option<&str>) -> Command {
+    let mut command = Command::new("ssh");
+    if let Some(identity) = identity {
+        command.args(["-i", identity]);
+    }
+    command.args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", target, remote]);
+    command
+}
+
 /// Remote paths are relative: ssh runs the command in the Spark user's home directory.
 fn fetch(remote: &str) -> Result<std::process::Output, String> {
     let conf = fs::read_to_string(SPARK_CONF).map_err(|e| format!("{SPARK_CONF}: {e}"))?;
+    let identity = spark_identity(&conf);
     let mut last = String::from("no hosts");
     for target in spark_targets(&conf) {
         let host = &target;
-        let r = Command::new("ssh")
-            .args(["-i", "/root/.ssh/id_ed25519_headscale_backup", "-o", "BatchMode=yes",
-                   "-o", "ConnectTimeout=5", target.as_str(), remote])
-            .output();
+        let r = spark_ssh(target.as_str(), remote, identity).output();
         match r {
             Ok(o) if o.status.success() => return Ok(o),
             Ok(o) => last = format!("{host}: ssh exit {}", o.status),
@@ -441,6 +456,45 @@ mod tests {
     fn spark_targets_parse() {
         let c = "# comment\ntarget=u@a\n target= u@b \ntarget=\nother=x\n";
         assert_eq!(spark_targets(c), vec!["u@a".to_string(), "u@b".to_string()]);
+    }
+    #[test]
+    fn spark_identity_parse() {
+        assert_eq!(spark_identity("# identity=ignored\ntarget=u@a\nother=x\n"), None);
+        assert_eq!(spark_identity("identity=\n identity=   \n"), None);
+        assert_eq!(
+            spark_identity("identity=\n identity= /example/key with spaces \nidentity=/ignored\n"),
+            Some("/example/key with spaces")
+        );
+    }
+    #[test]
+    fn spark_ssh_argv() {
+        let remote = "cat archive/status.json";
+        let command = spark_ssh("u@example", remote, Some("/example/key with spaces"));
+        assert_eq!(command.get_program(), "ssh");
+        assert_eq!(command.get_args().collect::<Vec<_>>(), vec![
+            "-i", "/example/key with spaces", "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=5", "u@example", remote,
+        ]);
+        let command = spark_ssh("u@example", remote, None);
+        assert_eq!(command.get_args().collect::<Vec<_>>(), vec![
+            "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "u@example", remote,
+        ]);
+    }
+    #[test]
+    fn spark_ssh_local_stub_smoke() {
+        // printf is a local stub: no ssh process, network access or remote shell.
+        for identity in [None, Some("/example/key with spaces")] {
+            let command = spark_ssh("u@example", "cat archive/status.json", identity);
+            let output = Command::new("printf").arg("%s\\n")
+                .args(command.get_args()).output().unwrap();
+            assert!(output.status.success());
+            let expected = if identity.is_some() {
+                "-i\n/example/key with spaces\n-o\nBatchMode=yes\n-o\nConnectTimeout=5\nu@example\ncat archive/status.json\n"
+            } else {
+                "-o\nBatchMode=yes\n-o\nConnectTimeout=5\nu@example\ncat archive/status.json\n"
+            };
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+        }
     }
     fn route(p: &str) -> ChatFeed {
         chat_route(p).unwrap()

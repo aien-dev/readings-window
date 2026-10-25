@@ -22,14 +22,22 @@ On the deployment host:
 
 1. Inspect both service identities with `systemctl show readings-window.service readings-collect.service -p Id -p User -p Group -p DynamicUser`. Empty `User=` with `DynamicUser=no` means root; confirm running processes with `ps -C readings-window -o user=,group=,args=`.
 2. Check whether `/etc/readings-window/spark.conf` already exists, including a dangling symlink. Never overwrite an existing file as part of migration. If absent, stage the recovered bytes in a root-owned temporary file in `/etc/readings-window/`, set mode 600, then publish with `ln -T TEMP /etc/readings-window/spark.conf`. Hard-link creation refuses an existing destination; remove only the temporary name afterward.
-3. Root-owned mode 600 is correct for the current root services. If a deployment uses a non-root identity, stop and establish an explicitly approved ownership/access policy first. That deployment also needs access to the fixed root SSH key path used by `fetch`; making this config readable alone is insufficient.
+3. Root-owned mode 600 is correct for the current root services. If a deployment uses a non-root identity, stop and establish an explicitly approved ownership/access policy first. That deployment also needs access to its selected SSH identity; making this config readable alone is insufficient.
 4. Compare the installed bytes to the private recovered file without printing either. Confirm owner, mode and readability as the actual service user.
 5. Check the existing service without collecting or restarting it: `systemctl is-active readings-window.service` and `curl --fail --silent --show-error --resolve readings.aienos.com:9443:127.0.0.1 https://readings.aienos.com:9443/health`.
 
-The config is read on each Spark fetch; installing it does not require a restart. Installing config is not a binary deployment. `/health` checks local history and exposure state, not SSH reachability, config loading or chat retrieval. The source still uses a fixed root SSH identity and paths relative to the configured remote user's home. Collection and live-chat readiness need separate authorized checks; a health response alone does not establish them.
+The config is read on each Spark fetch; installing it does not require a restart. Installing config is not a binary deployment. `/health` checks local history and exposure state, not SSH reachability, config loading or chat retrieval. Remote paths remain relative to the configured remote user's home. Collection and live-chat readiness need separate authorized checks; a health response alone does not establish them.
 
 On 2026-10-25, the missing config was restored from the original two targets in their original order. Both service units used root (`User=` empty, `DynamicUser=no`), and both running processes were root. The file was published without overwriting via a hard link, with owner/group root and mode 600; a byte comparison against the private recovered file matched. No binary was deployed and no service was restarted.
 The read-only post-install smoke returned `active` from `systemctl is-active readings-window.service` and `{"status":"ok","last_reading_age_s":13,"exposure":"ok"}` from the local HTTPS `/health` request with certificate validation. No collection command, chat fetch or model request was made by this check.
+
+### SSH identity migration
+
+The source no longer embeds a deployment-specific SSH key pathname. An optional `identity=PATH` line applies to every target; the first nonempty value is passed as one `ssh -i` argument. Leading/trailing whitespace is trimmed, but internal spaces are preserved and values are not shell-expanded or unquoted. With no nonempty identity, OpenSSH chooses from the service user's SSH configuration/default identities. Target ordering, batch mode and the five-second connect timeout are unchanged.
+
+Before deploying this change, recover the previously selected identity path privately. For an existing config, preserve its exact target bytes, stage a mode-600 root-owned replacement with the explicit identity, verify the original has not changed, and atomically replace it. Check that the service user can read the identity and that installed bytes match the private backup without printing either. Do not replace another operator's existing identity choice.
+
+On 2026-10-25, the installed root-owned mode-600 config and private backup were extended with the exact previously embedded identity path. The original target bytes were preserved, installed bytes were compared, owner/group and mode were checked, and the identity was readable as root. No key contents or private values were printed, no Spark fetch was made, no binary was deployed and no service was restarted. The local test smoke substitutes `printf` for SSH; it establishes argument boundaries only, not network authentication.
 
 ## How Muse calls it
 - Needs router forward of 9443/tcp to the hub's LAN address (Drake).
