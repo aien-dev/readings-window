@@ -9,7 +9,7 @@ Shared rules: read https://www.aienos.com/agents/RULES.md first. This file adds 
 - Applies to the whole repository: the crate (`src/main.rs`, `src/tls.rs`) and the exposure watch (`scripts/exposure-watch.sh`, `.service`, `.timer`).
 - The service is read-only by design. It serves files and runs fixed read commands on the Spark; it never writes to the Spark and never accepts uploads. Keep it that way.
 - Not in this repository: the Spark-side `spark-readings` script, the `readings-collect` timer and `readings-window` service units on the Pi, the token, the TLS key and certificate, and the exposure baseline. `NOTES.md` describes where they live.
-- `target/` and `.crumb.local` are ignored (`.gitignore`). Never commit them.
+- `target/`, `.crumb.local` and `spark.conf` are ignored (`.gitignore`). Never commit them or a real deployment target list.
 
 ## Installation
 
@@ -23,11 +23,12 @@ Needs a stable Rust toolchain only. Dependencies are `rustls` (ring provider, TL
 
 ## Configuration
 
-There are no flags, environment variables or config files. Everything is a constant in `src/main.rs`:
+Spark SSH targets come from `/etc/readings-window/spark.conf`; `spark.conf.example` documents the format. Each nonempty `target=USER@HOST` value is tried in file order. Keep real targets local-only, with the same order when migrating an existing deployment. There are no environment-variable or flag overrides.
 
 - Pi-side files: token `/etc/readings-window/token`, certificate `/etc/readings-window/fullchain.pem`, key `/etc/readings-window/key.pem`; data under `/var/lib/readings-window/` (`history.jsonl`, `status.json`, `results.json`, `exposure.json`).
 - Listen address `0.0.0.0:9443` (`serve`).
-- The Spark host addresses (`SPARK_HOSTS`), the ssh key path, the Spark-side status and results files and the agent archive paths (`AGENTS`, five fixed names). Changing one of these is a deployment change; say so in the pull request.
+- The target file is read on each fetch, not at server startup. Missing or unreadable config makes Spark fetches fail; `/health` can still return successfully because it reads local history. See the migration procedure in `NOTES.md`.
+- Other settings remain constants in `src/main.rs`: the root SSH key path, home-relative Spark status/results and agent archive paths (`AGENTS`, five fixed names). The configured SSH user's home must contain those paths. Changing one of these is a deployment change; say so in the pull request.
 - Limits: history `?hours=` default 24, max 720 (`DEFAULT_HOURS`, `MAX_HOURS`); chat `?lines=` default 500, max 50000; HTTP head cap 16 KiB and at most 64 connections (`src/tls.rs`); history kept 30 days (`KEEP_SECS`).
 - The exposure watch reads its baseline from `/etc/exposure-watch/baseline.json` (created on first run) and writes `/var/lib/readings-window/exposure.json`, which `/v1/exposure` serves.
 
