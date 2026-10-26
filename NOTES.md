@@ -67,7 +67,7 @@ TLS is terminated by rustls 0.23 (ring provider, TLS 1.2 and 1.3 only) in `src/t
 - Why: Drake wants the whole Claude chat stream visible to Muse on his MacBook and phone.
 - `GET /v1/chat/claude` serves `~/shared/agents/claude-chat.txt`, `GET /v1/chat/claude.jsonl` serves `claude-chat.jsonl` (Bearer token). `?lines=N` (default 500, clamped 1..50000) runs `tail -n N` on the Spark; `?all=1` runs `cat`. Only constant paths and a parsed integer reach the remote shell.
 - Proxied live over ssh on each request. NOTHING is written or cached on the hub, because its root disk is a fragile USB stick. Spark unreachable gives 502 `{"error":"spark unreachable"}`.
-- Each request blocks the single-threaded server for the ssh round trip (up to ~5 s connect timeout per host); `?all=1` on a large file is a big response. UNVERIFIED under load.
+- Each request runs in its own connection thread, shared with all routes under a 64-connection cap. A chat request holds its slot during the Spark SSH round trip and response write; simultaneous requests can start simultaneous SSH processes. SSH `ConnectTimeout=5` applies per target's connection attempt, not to the whole SSH command or HTTP request. The 15 s absolute TLS handshake/header deadline and 10 s socket inactivity timeouts do not bound SSH execution or total response time. `?all=1` on a large file is a big response. UNVERIFIED under load.
 
 ## Per-agent chat routes (added 2026-10-04, replaces the Claude-only feed above)
 - Why: Drake 2026-10-04 wants every agent's chat visible to Muse from one archive. Design: `~/handoffs/2026-10-04-agent-archive.md` (program `agent-archive`).
