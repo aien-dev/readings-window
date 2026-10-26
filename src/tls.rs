@@ -70,6 +70,38 @@ fn response_bytes(code: u16, ctype: &str, body: &str) -> Vec<u8> {
     out
 }
 
+/// rustls may perform several socket reads before returning a single plaintext
+/// read. Enforce the head deadline on every one of those transport reads.
+struct DeadlineStream {
+    tcp: TcpStream,
+    deadline: Instant,
+}
+
+impl Read for DeadlineStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        self.tcp.set_read_timeout(Some(remaining.min(IO_TIMEOUT)))?;
+        let n = self.tcp.read(buf)?;
+        if Instant::now() >= self.deadline {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        Ok(n)
+    }
+}
+
+impl Write for DeadlineStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.tcp.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.tcp.flush()
+    }
+}
+
 fn read_head<S: Read>(s: &mut S) -> Option<Vec<u8>> {
     let start = Instant::now();
     let mut buf = Vec::new();
@@ -96,12 +128,12 @@ fn read_head<S: Read>(s: &mut S) -> Option<Vec<u8>> {
 }
 
 fn serve_conn(tcp: TcpStream, cfg: Arc<ServerConfig>, token: &str) {
-    let _ = tcp.set_read_timeout(Some(IO_TIMEOUT));
+    let deadline = Instant::now() + HEAD_DEADLINE;
     let _ = tcp.set_write_timeout(Some(IO_TIMEOUT));
     let Ok(conn) = ServerConnection::new(cfg) else {
         return;
     };
-    let mut tls = StreamOwned::new(conn, tcp);
+    let mut tls = StreamOwned::new(conn, DeadlineStream { tcp, deadline });
     let Some(head) = read_head(&mut tls) else {
         return;
     };
@@ -190,6 +222,82 @@ mod tests {
         assert!(no.starts_with("HTTP/1.1 401"), "{no}");
         let bad = get(addr, &cert, Some("Bearer wrong"));
         assert!(bad.starts_with("HTTP/1.1 401"), "{bad}");
+    }
+
+    #[test]
+    fn fragmented_tls_handshake_cannot_outlive_head_deadline() {
+        let ck = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        let cfg = tls_config(
+            ck.cert.pem().as_bytes(),
+            ck.signing_key.serialize_pem().as_bytes(),
+        )
+        .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client.set_nodelay(true).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            serve_conn(server, cfg, TOKEN);
+            done_tx.send(()).unwrap();
+        });
+        // A legal-size TLS handshake record whose body never completes.
+        client.write_all(&[0x16, 0x03, 0x03, 0x10, 0x00]).unwrap();
+        let writer = std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                if client.write_all(&[0]).is_err() {
+                    break;
+                }
+            }
+        });
+        let outcome = done_rx.recv_timeout(HEAD_DEADLINE + Duration::from_secs(1));
+        assert!(outcome.is_ok(), "incomplete TLS record kept the worker past the deadline");
+        writer.join().unwrap();
+    }
+
+    #[test]
+    fn incomplete_tls_application_record_cannot_outlive_head_deadline() {
+        let ck = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        let cfg = tls_config(
+            ck.cert.pem().as_bytes(),
+            ck.signing_key.serialize_pem().as_bytes(),
+        )
+        .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client.set_nodelay(true).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            serve_conn(server, cfg, TOKEN);
+            done_tx.send(()).unwrap();
+        });
+        let mut roots = RootCertStore::empty();
+        roots.add(ck.cert.der().clone()).unwrap();
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let cfg = ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let mut conn =
+            ClientConnection::new(Arc::new(cfg), ServerName::try_from("localhost").unwrap())
+                .unwrap();
+        conn.complete_io(&mut client).unwrap();
+        // Handshake succeeded; send only the start of a TLS application record.
+        client.write_all(&[0x17, 0x03, 0x03, 0x10, 0x00]).unwrap();
+        let writer = std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                if client.write_all(&[0]).is_err() {
+                    break;
+                }
+            }
+        });
+        let outcome = done_rx.recv_timeout(HEAD_DEADLINE + Duration::from_secs(1));
+        assert!(outcome.is_ok(), "incomplete encrypted record kept the worker past the deadline");
+        writer.join().unwrap();
     }
 
     #[test]
