@@ -68,7 +68,8 @@ log "upnp=$upnp"
 
 # d. DNS
 dns_ok=true; dns_detail=""
-for h in hs.aienos.com readings.aienos.com; do
+# Public DNS names that must resolve to this public IP (override with EXPOSURE_DNS_HOSTS).
+for h in ${EXPOSURE_DNS_HOSTS:-hs.aienos.com readings.aienos.com}; do
   a=$(dig +short +time=5 +tries=1 A "$h" 2>/dev/null | grep -E '^[0-9.]+$' | sort | tr '\n' ' ')
   if [ "$a" != "$ip " ]; then dns_ok=false; dns_detail="$dns_detail $h=${a:-none}"; fi
 done

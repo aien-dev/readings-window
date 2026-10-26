@@ -23,7 +23,7 @@ A small Rust service. `collect` fetches one JSON line of readings from the Spark
 Spark SSH targets are local configuration, not source constants. Prepare `/etc/readings-window/spark.conf` using `spark.conf.example` and the migration procedure in `NOTES.md` before deploying a build that uses it. Keep real targets private. The current services run as root and use a root-owned mode-600 file. `/health` only reads local state and does not prove Spark fetch readiness.
 The optional `identity=PATH` setting selects the hub-side SSH key for all targets (first nonempty value wins); without it OpenSSH uses the service user's SSH configuration/default identities. Preserve the previously used identity in private config before upgrading. Paths with spaces are literal values, not shell-quoted strings.
 
-`scripts/` holds the exposure watch: a 15-minute timer that scans our own public IP from inside the LAN (the router hairpin view, which is not the same as the internet view) and flags any change against an accepted baseline in `/etc/exposure-watch/baseline.json`. It also flags UPnP being on and the `hs` and `readings` DNS records not matching the public IP.
+`scripts/` holds the exposure watch: a 15-minute timer that scans our own public IP from inside the LAN (the router hairpin view, which is not the same as the internet view) and flags any change against an accepted baseline in `/etc/exposure-watch/baseline.json`. It also flags UPnP being on and the `hs` and `readings` DNS records not matching the public IP (set `EXPOSURE_DNS_HOSTS` to check other names).
 Operational notes, unit names and the deployment layout are in `NOTES.md`.
 
 Build: `cargo build --release`. No Python. License: AGPL-3.0-or-later (see LICENSE).
