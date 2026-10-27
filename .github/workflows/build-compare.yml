@@ -1,0 +1,30 @@
+name: build-compare
+on:
+  push:
+    branches: [ci/serve-security-build-c6e2ab34]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustc --version && cargo --version
+      - run: cargo build --release --locked
+      - name: Fingerprint the fixed build
+        run: |
+          b=target/release/readings-window
+          ls -l "$b"
+          sha256sum "$b"
+          echo "deployed hub sha256: 6a937d2dc042456915ec548a2413652d700a2a6ff78e2415d368eda657a7fb56"
+          for s in rustls-0. rustls-webpki-0. ring-0. tiny_http; do
+            printf '%s: ' "$s"; grep -a -o -E "${s}[0-9.]*" "$b" | sort | uniq -c | tr '\n' ' '; echo
+          done
+          # The fixed build must not carry the RUSTSEC-2024-0336 line.
+          ! grep -a -q 'rustls-0\.20\.' "$b"
+          grep -a -q 'rustls-0\.23\.' "$b"
+          cargo tree --locked -i rustls
+      - uses: actions/upload-artifact@v4
+        with:
+          name: readings-window-c6e2ab34-aarch64
+          path: target/release/readings-window
